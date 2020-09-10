@@ -1,5 +1,6 @@
 getJasmineRequireObj().requireAsyncMatchers = function(jRequire, j$) {
-  var availableMatchers = [
+  const availableMatchers = [
+      'toBePending',
       'toBeResolved',
       'toBeRejected',
       'toBeResolvedTo',
@@ -8,8 +9,7 @@ getJasmineRequireObj().requireAsyncMatchers = function(jRequire, j$) {
     ],
     matchers = {};
 
-  for (var i = 0; i < availableMatchers.length; i++) {
-    var name = availableMatchers[i];
+  for (const name of availableMatchers) {
     matchers[name] = jRequire[name](j$);
   }
 

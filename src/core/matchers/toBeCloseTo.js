@@ -17,14 +17,27 @@ getJasmineRequireObj().toBeCloseTo = function() {
         }
 
         if (expected === null || actual === null) {
-          throw new Error('Cannot use toBeCloseTo with null. Arguments evaluated to: ' +
-            'expect(' + actual + ').toBeCloseTo(' + expected + ').'
+          throw new Error(
+            'Cannot use toBeCloseTo with null. Arguments evaluated to: ' +
+              'expect(' +
+              actual +
+              ').toBeCloseTo(' +
+              expected +
+              ').'
           );
         }
 
-        var pow = Math.pow(10, precision + 1);
-        var delta = Math.abs(expected - actual);
-        var maxDelta = Math.pow(10, -precision) / 2;
+        // Infinity is close to Infinity and -Infinity is close to -Infinity,
+        // regardless of the precision.
+        if (expected === Infinity || expected === -Infinity) {
+          return {
+            pass: actual === expected
+          };
+        }
+
+        const pow = Math.pow(10, precision + 1);
+        const delta = Math.abs(expected - actual);
+        const maxDelta = Math.pow(10, -precision) / 2;
 
         return {
           pass: Math.round(delta * pow) <= maxDelta * pow

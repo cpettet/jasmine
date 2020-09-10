@@ -5,27 +5,13 @@ describe('AsyncExpectation', function() {
     );
   });
 
-  describe('Factory', function() {
-    it('throws an Error if promises are not available', function() {
-      var thenable = { then: function() {} },
-        options = { global: {}, actual: thenable };
-      function f() {
-        jasmineUnderTest.Expectation.asyncFactory(options);
-      }
-      expect(f).toThrowError(
-        'expectAsync is unavailable because the environment does not support promises.'
-      );
-    });
-  });
-
   describe('#not', function() {
     it('converts a pass to a fail', function() {
-      jasmine.getEnv().requirePromises();
-
-      var addExpectationResult = jasmine.createSpy('addExpectationResult'),
+      const addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = Promise.resolve(),
+        pp = jasmineUnderTest.makePrettyPrinter(),
         expectation = jasmineUnderTest.Expectation.asyncFactory({
-          util: jasmineUnderTest.matchersUtil,
+          matchersUtil: new jasmineUnderTest.MatchersUtil({ pp: pp }),
           actual: actual,
           addExpectationResult: addExpectationResult
         });
@@ -42,12 +28,12 @@ describe('AsyncExpectation', function() {
     });
 
     it('converts a fail to a pass', function() {
-      jasmine.getEnv().requirePromises();
-
-      var addExpectationResult = jasmine.createSpy('addExpectationResult'),
+      const addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = Promise.reject(),
         expectation = jasmineUnderTest.Expectation.asyncFactory({
-          util: jasmineUnderTest.matchersUtil,
+          matchersUtil: new jasmineUnderTest.MatchersUtil({
+            pp: function() {}
+          }),
           actual: actual,
           addExpectationResult: addExpectationResult
         });
@@ -65,10 +51,9 @@ describe('AsyncExpectation', function() {
   });
 
   it('propagates rejections from the comparison function', function() {
-    jasmine.getEnv().requirePromises();
-    var error = new Error('ExpectationSpec failure');
+    const error = new Error('ExpectationSpec failure');
 
-    var addExpectationResult = jasmine.createSpy('addExpectationResult'),
+    const addExpectationResult = jasmine.createSpy('addExpectationResult'),
       actual = dummyPromise(),
       expectation = jasmineUnderTest.Expectation.asyncFactory({
         actual: actual,
@@ -89,18 +74,16 @@ describe('AsyncExpectation', function() {
 
   describe('#withContext', function() {
     it('prepends the context to the generated failure message', function() {
-      jasmine.getEnv().requirePromises();
-
-      var util = {
-          buildFailureMessage: function() {
-            return 'failure message';
+      const matchersUtil = {
+          pp: function(val) {
+            return val.toString();
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         expectation = jasmineUnderTest.Expectation.asyncFactory({
           actual: Promise.reject('rejected'),
           addExpectationResult: addExpectationResult,
-          util: util
+          matchersUtil: matchersUtil
         });
 
       return expectation
@@ -110,25 +93,25 @@ describe('AsyncExpectation', function() {
           expect(addExpectationResult).toHaveBeenCalledWith(
             false,
             jasmine.objectContaining({
-              message: 'Some context: failure message'
+              message:
+                'Some context: Expected a promise to be resolved but it was rejected with rejected.'
             })
           );
         });
     });
 
     it('prepends the context to a custom failure message', function() {
-      jasmine.getEnv().requirePromises();
-
-      var util = {
+      const matchersUtil = {
           buildFailureMessage: function() {
             return 'failure message';
-          }
+          },
+          pp: jasmineUnderTest.makePrettyPrinter()
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         expectation = jasmineUnderTest.Expectation.asyncFactory({
           actual: Promise.reject('b'),
           addExpectationResult: addExpectationResult,
-          util: util
+          matchersUtil: matchersUtil
         });
 
       return expectation
@@ -139,7 +122,8 @@ describe('AsyncExpectation', function() {
             false,
             jasmine.objectContaining({
               message:
-                "Some context: Expected a promise to be resolved to 'a' but it was rejected."
+                "Some context: Expected a promise to be resolved to 'a' " +
+                "but it was rejected with 'b'."
             })
           );
         });
@@ -147,9 +131,8 @@ describe('AsyncExpectation', function() {
 
     it('prepends the context to a custom failure message from a function', function() {
       pending('should actually work, but no custom matchers for async yet');
-      jasmine.getEnv().requirePromises();
 
-      var util = {
+      const matchersUtil = {
           buildFailureMessage: function() {
             return 'failure message';
           }
@@ -159,7 +142,7 @@ describe('AsyncExpectation', function() {
         expectation = jasmineUnderTest.Expectation.asyncFactory({
           actual: actual,
           addExpectationResult: addExpectationResult,
-          util: util
+          matchersUtil: matchersUtil
         });
 
       return expectation
@@ -176,14 +159,13 @@ describe('AsyncExpectation', function() {
     });
 
     it('works with #not', function() {
-      jasmine.getEnv().requirePromises();
-
-      var addExpectationResult = jasmine.createSpy('addExpectationResult'),
+      const addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = Promise.resolve(),
+        pp = jasmineUnderTest.makePrettyPrinter(),
         expectation = jasmineUnderTest.Expectation.asyncFactory({
           actual: actual,
           addExpectationResult: addExpectationResult,
-          util: jasmineUnderTest.matchersUtil
+          matchersUtil: new jasmineUnderTest.MatchersUtil({ pp: pp })
         });
 
       return expectation
@@ -201,14 +183,14 @@ describe('AsyncExpectation', function() {
     });
 
     it('works with #not and a custom message', function() {
-      jasmine.getEnv().requirePromises();
-
-      var addExpectationResult = jasmine.createSpy('addExpectationResult'),
+      const addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = Promise.resolve('a'),
         expectation = jasmineUnderTest.Expectation.asyncFactory({
           actual: actual,
           addExpectationResult: addExpectationResult,
-          util: jasmineUnderTest.matchersUtil
+          matchersUtil: new jasmineUnderTest.MatchersUtil({
+            pp: jasmineUnderTest.makePrettyPrinter()
+          })
         });
 
       return expectation
@@ -228,26 +210,20 @@ describe('AsyncExpectation', function() {
 
   describe('async matchers', function() {
     it('makes custom matchers available to this expectation', function() {
-      jasmine.getEnv().requirePromises();
-
-      var asyncMatchers = {
+      const asyncMatchers = {
           toFoo: function() {},
           toBar: function() {}
         },
-        expectation;
-
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
-        customAsyncMatchers: asyncMatchers
-      });
+        expectation = jasmineUnderTest.Expectation.asyncFactory({
+          customAsyncMatchers: asyncMatchers
+        });
 
       expect(expectation.toFoo).toBeDefined();
       expect(expectation.toBar).toBeDefined();
     });
 
     it("wraps matchers's compare functions, passing in matcher dependencies", function() {
-      jasmine.getEnv().requirePromises();
-
-      var fakeCompare = function() {
+      const fakeCompare = function() {
           return Promise.resolve({ pass: true });
         },
         matcherFactory = jasmine
@@ -256,33 +232,24 @@ describe('AsyncExpectation', function() {
         matchers = {
           toFoo: matcherFactory
         },
-        util = {
+        matchersUtil = {
           buildFailureMessage: jasmine.createSpy('buildFailureMessage')
         },
-        customEqualityTesters = ['a'],
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        expectation;
-
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
-        util: util,
-        customAsyncMatchers: matchers,
-        customEqualityTesters: customEqualityTesters,
-        actual: 'an actual',
-        addExpectationResult: addExpectationResult
-      });
+        expectation = jasmineUnderTest.Expectation.asyncFactory({
+          matchersUtil: matchersUtil,
+          customAsyncMatchers: matchers,
+          actual: 'an actual',
+          addExpectationResult: addExpectationResult
+        });
 
       return expectation.toFoo('hello').then(function() {
-        expect(matcherFactory).toHaveBeenCalledWith(
-          util,
-          customEqualityTesters
-        );
+        expect(matcherFactory).toHaveBeenCalledWith(matchersUtil);
       });
     });
 
     it("wraps matchers's compare functions, passing the actual and expected", function() {
-      jasmine.getEnv().requirePromises();
-
-      var fakeCompare = jasmine
+      const fakeCompare = jasmine
           .createSpy('fake-compare')
           .and.returnValue(Promise.resolve({ pass: true })),
         matchers = {
@@ -292,18 +259,16 @@ describe('AsyncExpectation', function() {
             };
           }
         },
-        util = {
+        matchersUtil = {
           buildFailureMessage: jasmine.createSpy('buildFailureMessage')
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        expectation;
-
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
-        util: util,
-        customAsyncMatchers: matchers,
-        actual: 'an actual',
-        addExpectationResult: addExpectationResult
-      });
+        expectation = jasmineUnderTest.Expectation.asyncFactory({
+          matchersUtil: matchersUtil,
+          customAsyncMatchers: matchers,
+          actual: 'an actual',
+          addExpectationResult: addExpectationResult
+        });
 
       return expectation.toFoo('hello').then(function() {
         expect(fakeCompare).toHaveBeenCalledWith('an actual', 'hello');
@@ -311,9 +276,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a passing result to the spec when the comparison passes', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -322,20 +285,19 @@ describe('AsyncExpectation', function() {
             };
           }
         },
-        util = {
+        matchersUtil = {
           buildFailureMessage: jasmine.createSpy('buildFailureMessage')
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
-        util: util,
+        matchersUtil: matchersUtil,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
       });
@@ -354,9 +316,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a failing result to the spec when the comparison fails', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -365,22 +325,21 @@ describe('AsyncExpectation', function() {
             };
           }
         },
-        util = {
+        matchersUtil = {
           buildFailureMessage: function() {
             return '';
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
-        util: util,
+        matchersUtil: matchersUtil,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
       });
@@ -399,9 +358,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a failing result and a custom fail message to the spec when the comparison fails', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -414,14 +371,13 @@ describe('AsyncExpectation', function() {
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         actual: 'an actual',
         customAsyncMatchers: matchers,
         addExpectationResult: addExpectationResult
@@ -441,9 +397,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a failing result with a custom fail message function to the spec when the comparison fails', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -458,14 +412,13 @@ describe('AsyncExpectation', function() {
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
@@ -485,9 +438,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a passing result to the spec when the comparison fails for a negative expectation', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -498,14 +449,13 @@ describe('AsyncExpectation', function() {
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = 'an actual',
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
@@ -525,9 +475,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a failing result to the spec when the comparison passes for a negative expectation', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -536,24 +484,23 @@ describe('AsyncExpectation', function() {
             };
           }
         },
-        util = {
+        matchersUtil = {
           buildFailureMessage: function() {
             return 'default message';
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = 'an actual',
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
         actual: 'an actual',
-        util: util,
+        matchersUtil: matchersUtil,
         addExpectationResult: addExpectationResult
       }).not;
 
@@ -571,9 +518,7 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports a failing result and a custom fail message to the spec when the comparison passes for a negative expectation', function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -587,14 +532,13 @@ describe('AsyncExpectation', function() {
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = 'an actual',
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
@@ -614,9 +558,7 @@ describe('AsyncExpectation', function() {
     });
 
     it("reports a passing result to the spec when the 'not' comparison passes, given a negativeCompare", function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -630,14 +572,13 @@ describe('AsyncExpectation', function() {
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = 'an actual',
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
@@ -657,9 +598,7 @@ describe('AsyncExpectation', function() {
     });
 
     it("reports a failing result and a custom fail message to the spec when the 'not' comparison fails, given a negativeCompare", function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -676,14 +615,13 @@ describe('AsyncExpectation', function() {
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
         actual = 'an actual',
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         customAsyncMatchers: matchers,
         actual: 'an actual',
         addExpectationResult: addExpectationResult
@@ -703,10 +641,8 @@ describe('AsyncExpectation', function() {
     });
 
     it('reports errorWithStack when a custom error message is returned', function() {
-      jasmine.getEnv().requirePromises();
-
-      var customError = new Error('I am a custom error');
-      var matchers = {
+      const customError = new Error('I am a custom error');
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -720,14 +656,13 @@ describe('AsyncExpectation', function() {
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         actual: 'an actual',
         customAsyncMatchers: matchers,
         addExpectationResult: addExpectationResult
@@ -747,9 +682,7 @@ describe('AsyncExpectation', function() {
     });
 
     it("reports a custom message to the spec when a 'not' comparison fails", function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -762,14 +695,13 @@ describe('AsyncExpectation', function() {
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      const expectation = jasmineUnderTest.Expectation.asyncFactory({
         actual: 'an actual',
         customAsyncMatchers: matchers,
         addExpectationResult: addExpectationResult
@@ -789,9 +721,7 @@ describe('AsyncExpectation', function() {
     });
 
     it("reports a custom message func to the spec when a 'not' comparison fails", function() {
-      jasmine.getEnv().requirePromises();
-
-      var matchers = {
+      const matchers = {
           toFoo: function() {
             return {
               compare: function() {
@@ -806,14 +736,13 @@ describe('AsyncExpectation', function() {
           }
         },
         addExpectationResult = jasmine.createSpy('addExpectationResult'),
-        errorWithStack = new Error('errorWithStack'),
-        expectation;
+        errorWithStack = new Error('errorWithStack');
 
       spyOn(jasmineUnderTest.util, 'errorWithStack').and.returnValue(
         errorWithStack
       );
 
-      expectation = jasmineUnderTest.Expectation.asyncFactory({
+      let expectation = jasmineUnderTest.Expectation.asyncFactory({
         actual: 'an actual',
         customAsyncMatchers: matchers,
         addExpectationResult: addExpectationResult
@@ -834,6 +763,6 @@ describe('AsyncExpectation', function() {
   });
 
   function dummyPromise() {
-    return new Promise(function(resolve, reject) {});
+    return new Promise(function() {});
   }
 });

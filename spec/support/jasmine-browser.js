@@ -12,21 +12,18 @@ module.exports = {
     'core/Suite.js',
     'core/**/*.js',
     'html/**/*.js',
-    '**/*.js'
+    '**/*.js',
+    '!boot/**.js'
   ],
   specDir: 'spec',
   specFiles: ['**/*[Ss]pec.js', '!npmPackage/**/*'],
   helpers: [
-    'helpers/asyncAwait.js',
+    'helpers/generator.js',
     'helpers/BrowserFlags.js',
-    'helpers/checkForMap.js',
-    'helpers/checkForSet.js',
-    'helpers/checkForSymbol.js',
-    'helpers/checkForTypedArrays.js',
     'helpers/domHelpers.js',
     'helpers/integrationMatchers.js',
-    'helpers/promises.js',
-    'helpers/defineJasmineUnderTest.js'
+    'helpers/defineJasmineUnderTest.js',
+    'helpers/resetEnv.js'
   ],
   random: true,
   browser: {
@@ -38,9 +35,7 @@ module.exports = {
       browserVersion: process.env.SAUCE_BROWSER_VERSION,
       build: `Core ${process.env.TRAVIS_BUILD_NUMBER || 'Ran locally'}`,
       tags: ['Jasmine-Core'],
-      tunnelIdentifier: process.env.TRAVIS_JOB_NUMBER
-        ? process.env.TRAVIS_JOB_NUMBER.toString()
-        : null,
+      tunnelIdentifier: process.env.SAUCE_TUNNEL_IDENTIFIER,
       username: process.env.SAUCE_USERNAME,
       accessKey: process.env.SAUCE_ACCESS_KEY
     }

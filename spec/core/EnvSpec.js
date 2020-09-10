@@ -1,8 +1,12 @@
 // TODO: Fix these unit tests!
 describe('Env', function() {
-  var env;
+  let env;
   beforeEach(function() {
     env = new jasmineUnderTest.Env();
+  });
+
+  afterEach(function() {
+    env.cleanup_();
   });
 
   describe('#pending', function() {
@@ -22,9 +26,59 @@ describe('Env', function() {
   });
 
   describe('#topSuite', function() {
-    it('returns the Jasmine top suite for users to traverse the spec tree', function() {
-      var suite = env.topSuite();
+    it('returns an object that describes the tree of suites and specs', function() {
+      spyOn(env, 'deprecated');
+
+      env.it('a top level spec');
+      env.describe('a suite', function() {
+        env.it('a spec');
+        env.describe('a nested suite', function() {
+          env.it('a nested spec');
+        });
+      });
+
+      const suite = env.topSuite();
+      expect(suite).not.toBeInstanceOf(jasmineUnderTest.Suite);
       expect(suite.description).toEqual('Jasmine__TopLevel__Suite');
+      expect(suite.getFullName()).toEqual('');
+      expect(suite.children.length).toEqual(2);
+
+      expect(suite.children[0]).not.toBeInstanceOf(jasmineUnderTest.Spec);
+      expect(suite.children[0].description).toEqual('a top level spec');
+      expect(suite.children[0].getFullName()).toEqual('a top level spec');
+      expect(suite.children[0].children).toBeFalsy();
+
+      expect(suite.children[1]).not.toBeInstanceOf(jasmineUnderTest.Suite);
+      expect(suite.children[1].description).toEqual('a suite');
+      expect(suite.children[1].getFullName()).toEqual('a suite');
+      expect(suite.children[1].parentSuite).toBe(suite);
+      expect(suite.children[1].children.length).toEqual(2);
+
+      expect(suite.children[1].children[0]).not.toBeInstanceOf(
+        jasmineUnderTest.Spec
+      );
+      expect(suite.children[1].children[0].description).toEqual('a spec');
+      expect(suite.children[1].children[0].getFullName()).toEqual(
+        'a suite a spec'
+      );
+      expect(suite.children[1].children[0].children).toBeFalsy();
+
+      expect(suite.children[1].children[1].description).toEqual(
+        'a nested suite'
+      );
+      expect(suite.children[1].children[1].getFullName()).toEqual(
+        'a suite a nested suite'
+      );
+      expect(suite.children[1].children[1].parentSuite).toBe(suite.children[1]);
+      expect(suite.children[1].children[1].children.length).toEqual(1);
+
+      expect(suite.children[1].children[1].children[0].description).toEqual(
+        'a nested spec'
+      );
+      expect(suite.children[1].children[1].children[0].getFullName()).toEqual(
+        'a suite a nested suite a nested spec'
+      );
+      expect(suite.children[1].children[1].children[0].children).toBeFalsy();
     });
   });
 
@@ -33,9 +87,9 @@ describe('Env', function() {
   });
 
   it('can configure specs to throw errors on expectation failures', function() {
-    env.configure({ oneFailurePerSpec: true });
+    env.configure({ stopSpecOnExpectationFailure: true });
 
-    spyOn(jasmineUnderTest, 'Spec');
+    spyOn(jasmineUnderTest, 'Spec').and.callThrough();
     env.it('foo', function() {});
     expect(jasmineUnderTest.Spec).toHaveBeenCalledWith(
       jasmine.objectContaining({
@@ -45,7 +99,7 @@ describe('Env', function() {
   });
 
   it('can configure suites to throw errors on expectation failures', function() {
-    env.configure({ oneFailurePerSpec: true });
+    env.configure({ stopSpecOnExpectationFailure: true });
 
     spyOn(jasmineUnderTest, 'Suite');
     env.describe('foo', function() {});
@@ -56,33 +110,34 @@ describe('Env', function() {
     );
   });
 
-  describe('promise library', function() {
-    it('can be configured without a custom library', function() {
-      env.configure({});
-      env.configure({ Promise: undefined });
+  it('ignores configuration properties that are present but undefined', function() {
+    spyOn(env, 'deprecated');
+    const initialConfig = {
+      random: true,
+      seed: '123',
+      failSpecWithNoExpectations: true,
+      stopSpecOnExpectationFailure: true,
+      stopOnSpecFailure: true,
+      hideDisabled: true
+    };
+    env.configure(initialConfig);
+
+    env.configure({
+      random: undefined,
+      seed: undefined,
+      failSpecWithNoExpectations: undefined,
+      stopSpecOnExpectationFailure: undefined,
+      stopOnSpecFailure: undefined,
+      hideDisabled: undefined
     });
 
-    it('can be configured with a custom library', function() {
-      var myLibrary = {
-        resolve: jasmine.createSpy(),
-        reject: jasmine.createSpy()
-      };
-      env.configure({ Promise: myLibrary });
-    });
-
-    it('cannot be configured with an invalid promise library', function() {
-      var myLibrary = {};
-
-      expect(function() {
-        env.configure({ Promise: myLibrary });
-      }).toThrowError(
-        'Custom promise library missing `resolve`/`reject` functions'
-      );
-    });
+    expect(env.configuration()).toEqual(
+      jasmine.objectContaining(initialConfig)
+    );
   });
 
   it('defaults to multiple failures for specs', function() {
-    spyOn(jasmineUnderTest, 'Spec');
+    spyOn(jasmineUnderTest, 'Spec').and.callThrough();
     env.it('bar', function() {});
     expect(jasmineUnderTest.Spec).toHaveBeenCalledWith(
       jasmine.objectContaining({
@@ -101,9 +156,43 @@ describe('Env', function() {
     );
   });
 
+  function behavesLikeDescribe(methodName) {
+    it('returns a suite metadata object', function() {
+      let innerSuite;
+      let spec;
+      const suite = env[methodName]('outer suite', function() {
+        innerSuite = env[methodName]('inner suite', function() {
+          spec = env.it('a spec');
+        });
+      });
+
+      expect(suite.parentSuite).toEqual(
+        jasmine.objectContaining({
+          description: 'Jasmine__TopLevel__Suite'
+        })
+      );
+      expect(suite.parentSuite.pend).toBeUndefined();
+      expect(suite.pend).toBeUndefined();
+      expect(suite.description).toEqual('outer suite');
+      expect(suite.getFullName()).toEqual('outer suite');
+      expect(suite.id).toBeInstanceOf(String);
+      expect(suite.id).not.toEqual('');
+      expect(suite.children.length).toEqual(1);
+      expect(suite.children[0]).toBe(innerSuite);
+      expect(innerSuite.children.length).toEqual(1);
+      expect(innerSuite.children[0]).toBe(spec);
+      expect(innerSuite.getFullName()).toEqual('outer suite inner suite');
+      expect(innerSuite.parentSuite).toBe(suite);
+      expect(spec.getFullName()).toEqual('outer suite inner suite a spec');
+    });
+  }
+
   describe('#describe', function() {
+    behavesLikeDescribe('describe');
+
     it('throws an error when given arguments', function() {
       expect(function() {
+        // eslint-disable-next-line no-unused-vars
         env.describe('done method', function(done) {});
       }).toThrowError('describe does not expect any arguments');
     });
@@ -137,14 +226,64 @@ describe('Env', function() {
       );
 
       expect(function() {
-        env.describe('fn arg', function() {});
+        env.describe('fn arg', function() {
+          env.it('has a spec', function() {});
+        });
       }).not.toThrowError(
         'describe expects a function argument; received [object Function]'
       );
     });
+
+    it('throws an error when it has no children', function() {
+      let ran = false;
+      env.describe('parent suite', function() {
+        expect(function() {
+          env.describe('child suite', function() {});
+        }).toThrowError(
+          'describe with no children (describe() or it()): parent suite child suite'
+        );
+        ran = true;
+      });
+
+      expect(ran).toBeTrue();
+    });
   });
 
+  describe('#fdescribe', function() {
+    behavesLikeDescribe('fdescribe');
+  });
+
+  describe('xdescribe', function() {
+    behavesLikeDescribe('xdescribe');
+  });
+
+  function behavesLikeIt(methodName) {
+    it('returns a spec metadata object', function() {
+      let spec;
+
+      env.describe('a suite', function() {
+        spec = env[methodName]('a spec', function() {});
+      });
+
+      expect(spec.description)
+        .withContext('description')
+        .toEqual('a spec');
+      expect(spec.getFullName())
+        .withContext('getFullName')
+        .toEqual('a suite a spec');
+      expect(spec.id)
+        .withContext('id')
+        .toBeInstanceOf(String);
+      expect(spec.id)
+        .withContext('id')
+        .not.toEqual('');
+      expect(spec.pend).toBeFalsy();
+    });
+  }
+
   describe('#it', function() {
+    behavesLikeIt('it');
+
     it('throws an error when it receives a non-fn argument', function() {
       expect(function() {
         env.it('undefined arg', null);
@@ -160,17 +299,36 @@ describe('Env', function() {
     });
 
     it('accepts an async function', function() {
-      jasmine.getEnv().requireAsyncAwait();
       expect(function() {
-        env.it('async', jasmine.getEnv().makeAsyncAwaitFunction());
+        env.it('async', async function() {});
       }).not.toThrow();
+    });
+
+    it('throws an error when the timeout value is too large for setTimeout', function() {
+      expect(function() {
+        env.it('huge timeout', function() {}, 2147483648);
+      }).toThrowError('Timeout value cannot be greater than 2147483647');
     });
   });
 
   describe('#xit', function() {
+    behavesLikeIt('xit');
+
+    it('calls spec.exclude with "Temporarily disabled with xit"', function() {
+      const excludeSpy = jasmine.createSpy();
+      spyOn(jasmineUnderTest.SuiteBuilder.prototype, 'it_').and.returnValue({
+        exclude: excludeSpy
+      });
+      env.xit('foo', function() {});
+      expect(excludeSpy).toHaveBeenCalledWith('Temporarily disabled with xit');
+    });
+
     it('calls spec.pend with "Temporarily disabled with xit"', function() {
-      var pendSpy = jasmine.createSpy();
-      spyOn(env, 'it').and.returnValue({
+      const pendSpy = jasmine.createSpy();
+      const realExclude = jasmineUnderTest.Spec.prototype.exclude;
+
+      spyOn(jasmineUnderTest.SuiteBuilder.prototype, 'it_').and.returnValue({
+        exclude: realExclude,
         pend: pendSpy
       });
       env.xit('foo', function() {});
@@ -192,20 +350,27 @@ describe('Env', function() {
     });
 
     it('accepts an async function', function() {
-      jasmine.getEnv().requireAsyncAwait();
       expect(function() {
-        env.xit('async', jasmine.getEnv().makeAsyncAwaitFunction());
+        env.xit('async', async function() {});
       }).not.toThrow();
     });
   });
 
   describe('#fit', function() {
+    behavesLikeIt('fit');
+
     it('throws an error when it receives a non-fn argument', function() {
       expect(function() {
         env.fit('undefined arg', undefined);
       }).toThrowError(
         /fit expects a function argument; received \[object (Undefined|DOMWindow|Object)\]/
       );
+    });
+
+    it('throws an error when the timeout value is too large for setTimeout', function() {
+      expect(function() {
+        env.fit('huge timeout', function() {}, 2147483648);
+      }).toThrowError('Timeout value cannot be greater than 2147483647');
     });
   });
 
@@ -219,10 +384,15 @@ describe('Env', function() {
     });
 
     it('accepts an async function', function() {
-      jasmine.getEnv().requireAsyncAwait();
       expect(function() {
-        env.beforeEach(jasmine.getEnv().makeAsyncAwaitFunction());
+        env.beforeEach(async function() {});
       }).not.toThrow();
+    });
+
+    it('throws an error when the timeout value is too large for setTimeout', function() {
+      expect(function() {
+        env.beforeEach(function() {}, 2147483648);
+      }).toThrowError('Timeout value cannot be greater than 2147483647');
     });
   });
 
@@ -236,10 +406,15 @@ describe('Env', function() {
     });
 
     it('accepts an async function', function() {
-      jasmine.getEnv().requireAsyncAwait();
       expect(function() {
-        env.beforeAll(jasmine.getEnv().makeAsyncAwaitFunction());
+        env.beforeAll(async function() {});
       }).not.toThrow();
+    });
+
+    it('throws an error when the timeout value is too large for setTimeout', function() {
+      expect(function() {
+        env.beforeAll(function() {}, 2147483648);
+      }).toThrowError('Timeout value cannot be greater than 2147483647');
     });
   });
 
@@ -253,10 +428,15 @@ describe('Env', function() {
     });
 
     it('accepts an async function', function() {
-      jasmine.getEnv().requireAsyncAwait();
       expect(function() {
-        env.afterEach(jasmine.getEnv().makeAsyncAwaitFunction());
+        env.afterEach(async function() {});
       }).not.toThrow();
+    });
+
+    it('throws an error when the timeout value is too large for setTimeout', function() {
+      expect(function() {
+        env.afterEach(function() {}, 2147483648);
+      }).toThrowError('Timeout value cannot be greater than 2147483647');
     });
   });
 
@@ -270,38 +450,162 @@ describe('Env', function() {
     });
 
     it('accepts an async function', function() {
-      jasmine.getEnv().requireAsyncAwait();
       expect(function() {
-        env.afterAll(jasmine.getEnv().makeAsyncAwaitFunction());
+        env.afterAll(async function() {});
       }).not.toThrow();
+    });
+
+    it('throws an error when the timeout value is too large for setTimeout', function() {
+      expect(function() {
+        env.afterAll(function() {}, 2147483648);
+      }).toThrowError('Timeout value cannot be greater than 2147483647');
     });
   });
 
   describe('when not constructed with suppressLoadErrors: true', function() {
     it('installs a global error handler on construction', function() {
-      var globalErrors = jasmine.createSpyObj('globalErrors', [
+      const globalErrors = jasmine.createSpyObj('globalErrors', [
         'install',
+        'uninstall',
         'pushListener',
-        'popListener'
+        'popListener',
+        'removeOverrideListener'
       ]);
       spyOn(jasmineUnderTest, 'GlobalErrors').and.returnValue(globalErrors);
-      new jasmineUnderTest.Env();
+      env.cleanup_();
+      env = new jasmineUnderTest.Env();
       expect(globalErrors.install).toHaveBeenCalled();
     });
   });
 
   describe('when constructed with suppressLoadErrors: true', function() {
     it('does not install a global error handler until execute is called', function() {
-      var globalErrors = jasmine.createSpyObj('globalErrors', [
+      const globalErrors = jasmine.createSpyObj('globalErrors', [
         'install',
+        'uninstall',
         'pushListener',
-        'popListener'
+        'popListener',
+        'removeOverrideListener'
       ]);
       spyOn(jasmineUnderTest, 'GlobalErrors').and.returnValue(globalErrors);
+      env.cleanup_();
       env = new jasmineUnderTest.Env({ suppressLoadErrors: true });
       expect(globalErrors.install).not.toHaveBeenCalled();
       env.execute();
       expect(globalErrors.install).toHaveBeenCalled();
+    });
+  });
+
+  it('creates an expectationFactory that uses the current custom equality testers and object formatters', async function() {
+    function customEqualityTester() {}
+    function customObjectFormatter() {}
+    function prettyPrinter() {}
+    const RealSpec = jasmineUnderTest.Spec;
+    let specInstance;
+    let expectationFactory;
+    spyOn(jasmineUnderTest, 'MatchersUtil');
+    spyOn(jasmineUnderTest, 'makePrettyPrinter').and.returnValue(prettyPrinter);
+    spyOn(jasmineUnderTest, 'Spec').and.callFake(function(options) {
+      expectationFactory = options.expectationFactory;
+      specInstance = new RealSpec(options);
+      return specInstance;
+    });
+
+    env.it('spec', function() {
+      env.addCustomEqualityTester(customEqualityTester);
+      env.addCustomObjectFormatter(customObjectFormatter);
+      expectationFactory('actual', specInstance);
+    });
+
+    await env.execute();
+    expect(jasmineUnderTest.makePrettyPrinter).toHaveBeenCalledWith([
+      customObjectFormatter
+    ]);
+    expect(jasmineUnderTest.MatchersUtil).toHaveBeenCalledWith({
+      customTesters: [customEqualityTester],
+      pp: prettyPrinter
+    });
+  });
+
+  it('creates an asyncExpectationFactory that uses the current custom equality testers and object formatters', async function() {
+    function customEqualityTester() {}
+    function customObjectFormatter() {}
+    function prettyPrinter() {}
+    const RealSpec = jasmineUnderTest.Spec;
+    let specInstance;
+    let asyncExpectationFactory;
+    spyOn(jasmineUnderTest, 'MatchersUtil');
+    spyOn(jasmineUnderTest, 'makePrettyPrinter').and.returnValue(prettyPrinter);
+    spyOn(jasmineUnderTest, 'Spec').and.callFake(function(options) {
+      asyncExpectationFactory = options.asyncExpectationFactory;
+      specInstance = new RealSpec(options);
+      return specInstance;
+    });
+
+    env.it('spec', function() {
+      env.addCustomEqualityTester(customEqualityTester);
+      env.addCustomObjectFormatter(customObjectFormatter);
+      asyncExpectationFactory('actual', specInstance);
+    });
+
+    await env.execute();
+
+    expect(jasmineUnderTest.makePrettyPrinter).toHaveBeenCalledWith([
+      customObjectFormatter
+    ]);
+    expect(jasmineUnderTest.MatchersUtil).toHaveBeenCalledWith({
+      customTesters: [customEqualityTester],
+      pp: prettyPrinter
+    });
+  });
+
+  it("does not expose the suite as 'this'", function() {
+    let suiteThis;
+    spyOn(env, 'deprecated');
+
+    env.describe('a suite', function() {
+      suiteThis = this;
+      env.it('has a spec');
+    });
+
+    expect(suiteThis).not.toBeInstanceOf(jasmineUnderTest.Suite);
+  });
+
+  describe('#execute', function() {
+    it('returns a promise', function() {
+      expect(env.execute()).toBeInstanceOf(Promise);
+    });
+
+    it('should reset the topSuite when run twice', function() {
+      spyOn(jasmineUnderTest.Suite.prototype, 'reset');
+      return env
+        .execute() // 1
+        .then(function() {
+          return env.execute(); // 2
+        })
+        .then(function() {
+          expect(
+            jasmineUnderTest.Suite.prototype.reset
+          ).toHaveBeenCalledOnceWith();
+          const id = jasmineUnderTest.Suite.prototype.reset.calls.thisFor(0).id;
+          expect(id).toBeTruthy();
+          expect(id).toEqual(env.topSuite().id);
+        });
+    });
+  });
+
+  describe('#spyOnGlobalErrorsAsync', function() {
+    it('throws if the callback does not return a promise', async function() {
+      const msg =
+        'The callback to spyOnGlobalErrorsAsync must be an async or ' +
+        'promise-returning function';
+
+      await expectAsync(
+        env.spyOnGlobalErrorsAsync(() => undefined)
+      ).toBeRejectedWithError(msg);
+      await expectAsync(
+        env.spyOnGlobalErrorsAsync(() => 'not a promise')
+      ).toBeRejectedWithError(msg);
     });
   });
 });

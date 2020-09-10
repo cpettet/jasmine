@@ -3,9 +3,13 @@ getJasmineRequireObj().ArrayContaining = function(j$) {
     this.sample = sample;
   }
 
-  ArrayContaining.prototype.asymmetricMatch = function(other, customTesters) {
+  ArrayContaining.prototype.asymmetricMatch = function(other, matchersUtil) {
     if (!j$.isArray_(this.sample)) {
-      throw new Error('You must provide an array to arrayContaining, not ' + j$.pp(this.sample) + '.');
+      throw new Error(
+        'You must provide an array to arrayContaining, not ' +
+          j$.basicPrettyPrinter_(this.sample) +
+          '.'
+      );
     }
 
     // If the actual parameter is not an array, we can fail immediately, since it couldn't
@@ -15,9 +19,8 @@ getJasmineRequireObj().ArrayContaining = function(j$) {
       return false;
     }
 
-    for (var i = 0; i < this.sample.length; i++) {
-      var item = this.sample[i];
-      if (!j$.matchersUtil.contains(other, item, customTesters)) {
+    for (const item of this.sample) {
+      if (!matchersUtil.contains(other, item)) {
         return false;
       }
     }
@@ -25,8 +28,8 @@ getJasmineRequireObj().ArrayContaining = function(j$) {
     return true;
   };
 
-  ArrayContaining.prototype.jasmineToString = function () {
-    return '<jasmine.arrayContaining(' + j$.pp(this.sample) +')>';
+  ArrayContaining.prototype.jasmineToString = function(pp) {
+    return '<jasmine.arrayContaining(' + pp(this.sample) + ')>';
   };
 
   return ArrayContaining;

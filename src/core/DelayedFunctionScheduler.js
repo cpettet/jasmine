@@ -1,21 +1,19 @@
 getJasmineRequireObj().DelayedFunctionScheduler = function(j$) {
   function DelayedFunctionScheduler() {
-    var self = this;
-    var scheduledLookup = [];
-    var scheduledFunctions = {};
-    var currentTime = 0;
-    var delayedFnCount = 0;
-    var deletedKeys = [];
+    this.scheduledLookup_ = [];
+    this.scheduledFunctions_ = {};
+    this.currentTime_ = 0;
+    this.delayedFnCount_ = 0;
+    this.deletedKeys_ = [];
 
-    self.tick = function(millis, tickDate) {
+    this.tick = function(millis, tickDate) {
       millis = millis || 0;
-      var endTime = currentTime + millis;
+      const endTime = this.currentTime_ + millis;
 
-      runScheduledFunctions(endTime, tickDate);
-      currentTime = endTime;
+      this.runScheduledFunctions_(endTime, tickDate);
     };
 
-    self.scheduleFunction = function(
+    this.scheduleFunction = function(
       funcToCall,
       millis,
       params,
@@ -23,22 +21,21 @@ getJasmineRequireObj().DelayedFunctionScheduler = function(j$) {
       timeoutKey,
       runAtMillis
     ) {
-      var f;
+      let f;
       if (typeof funcToCall === 'string') {
-        /* jshint evil: true */
         f = function() {
+          // eslint-disable-next-line no-eval
           return eval(funcToCall);
         };
-        /* jshint evil: false */
       } else {
         f = funcToCall;
       }
 
       millis = millis || 0;
-      timeoutKey = timeoutKey || ++delayedFnCount;
-      runAtMillis = runAtMillis || currentTime + millis;
+      timeoutKey = timeoutKey || ++this.delayedFnCount_;
+      runAtMillis = runAtMillis || this.currentTime_ + millis;
 
-      var funcToSchedule = {
+      const funcToSchedule = {
         runAtMillis: runAtMillis,
         funcToCall: f,
         recurring: recurring,
@@ -47,12 +44,12 @@ getJasmineRequireObj().DelayedFunctionScheduler = function(j$) {
         millis: millis
       };
 
-      if (runAtMillis in scheduledFunctions) {
-        scheduledFunctions[runAtMillis].push(funcToSchedule);
+      if (runAtMillis in this.scheduledFunctions_) {
+        this.scheduledFunctions_[runAtMillis].push(funcToSchedule);
       } else {
-        scheduledFunctions[runAtMillis] = [funcToSchedule];
-        scheduledLookup.push(runAtMillis);
-        scheduledLookup.sort(function(a, b) {
+        this.scheduledFunctions_[runAtMillis] = [funcToSchedule];
+        this.scheduledLookup_.push(runAtMillis);
+        this.scheduledLookup_.sort(function(a, b) {
           return a - b;
         });
       }
@@ -60,19 +57,19 @@ getJasmineRequireObj().DelayedFunctionScheduler = function(j$) {
       return timeoutKey;
     };
 
-    self.removeFunctionWithId = function(timeoutKey) {
-      deletedKeys.push(timeoutKey);
+    this.removeFunctionWithId = function(timeoutKey) {
+      this.deletedKeys_.push(timeoutKey);
 
-      for (var runAtMillis in scheduledFunctions) {
-        var funcs = scheduledFunctions[runAtMillis];
-        var i = indexOfFirstToPass(funcs, function(func) {
+      for (const runAtMillis in this.scheduledFunctions_) {
+        const funcs = this.scheduledFunctions_[runAtMillis];
+        const i = indexOfFirstToPass(funcs, function(func) {
           return func.timeoutKey === timeoutKey;
         });
 
         if (i > -1) {
           if (funcs.length === 1) {
-            delete scheduledFunctions[runAtMillis];
-            deleteFromLookup(runAtMillis);
+            delete this.scheduledFunctions_[runAtMillis];
+            this.deleteFromLookup_(runAtMillis);
           } else {
             funcs.splice(i, 1);
           }
@@ -84,94 +81,99 @@ getJasmineRequireObj().DelayedFunctionScheduler = function(j$) {
       }
     };
 
-    return self;
+    return this;
+  }
 
-    function indexOfFirstToPass(array, testFn) {
-      var index = -1;
+  DelayedFunctionScheduler.prototype.runScheduledFunctions_ = function(
+    endTime,
+    tickDate
+  ) {
+    tickDate = tickDate || function() {};
+    if (
+      this.scheduledLookup_.length === 0 ||
+      this.scheduledLookup_[0] > endTime
+    ) {
+      if (endTime >= this.currentTime_) {
+        tickDate(endTime - this.currentTime_);
+        this.currentTime_ = endTime;
+      }
+      return;
+    }
 
-      for (var i = 0; i < array.length; ++i) {
-        if (testFn(array[i])) {
-          index = i;
-          break;
+    do {
+      this.deletedKeys_ = [];
+      const newCurrentTime = this.scheduledLookup_.shift();
+      if (newCurrentTime >= this.currentTime_) {
+        tickDate(newCurrentTime - this.currentTime_);
+        this.currentTime_ = newCurrentTime;
+      }
+
+      const funcsToRun = this.scheduledFunctions_[this.currentTime_];
+
+      delete this.scheduledFunctions_[this.currentTime_];
+
+      for (const fn of funcsToRun) {
+        if (fn.recurring) {
+          this.reschedule_(fn);
         }
       }
 
-      return index;
+      for (const fn of funcsToRun) {
+        if (this.deletedKeys_.includes(fn.timeoutKey)) {
+          // skip a timeoutKey deleted whilst we were running
+          return;
+        }
+        fn.funcToCall.apply(null, fn.params || []);
+      }
+      this.deletedKeys_ = [];
+    } while (
+      this.scheduledLookup_.length > 0 &&
+      // checking first if we're out of time prevents setTimeout(0)
+      // scheduled in a funcToRun from forcing an extra iteration
+      this.currentTime_ !== endTime &&
+      this.scheduledLookup_[0] <= endTime
+    );
+
+    // ran out of functions to call, but still time left on the clock
+    if (endTime >= this.currentTime_) {
+      tickDate(endTime - this.currentTime_);
+      this.currentTime_ = endTime;
     }
+  };
 
-    function deleteFromLookup(key) {
-      var value = Number(key);
-      var i = indexOfFirstToPass(scheduledLookup, function(millis) {
-        return millis === value;
-      });
+  DelayedFunctionScheduler.prototype.reschedule_ = function(scheduledFn) {
+    this.scheduleFunction(
+      scheduledFn.funcToCall,
+      scheduledFn.millis,
+      scheduledFn.params,
+      true,
+      scheduledFn.timeoutKey,
+      scheduledFn.runAtMillis + scheduledFn.millis
+    );
+  };
 
-      if (i > -1) {
-        scheduledLookup.splice(i, 1);
+  DelayedFunctionScheduler.prototype.deleteFromLookup_ = function(key) {
+    const value = Number(key);
+    const i = indexOfFirstToPass(this.scheduledLookup_, function(millis) {
+      return millis === value;
+    });
+
+    if (i > -1) {
+      this.scheduledLookup_.splice(i, 1);
+    }
+  };
+
+  function indexOfFirstToPass(array, testFn) {
+    let index = -1;
+
+    for (let i = 0; i < array.length; ++i) {
+      if (testFn(array[i])) {
+        index = i;
+        break;
       }
     }
 
-    function reschedule(scheduledFn) {
-      self.scheduleFunction(
-        scheduledFn.funcToCall,
-        scheduledFn.millis,
-        scheduledFn.params,
-        true,
-        scheduledFn.timeoutKey,
-        scheduledFn.runAtMillis + scheduledFn.millis
-      );
-    }
-
-    function forEachFunction(funcsToRun, callback) {
-      for (var i = 0; i < funcsToRun.length; ++i) {
-        callback(funcsToRun[i]);
-      }
-    }
-
-    function runScheduledFunctions(endTime, tickDate) {
-      tickDate = tickDate || function() {};
-      if (scheduledLookup.length === 0 || scheduledLookup[0] > endTime) {
-        tickDate(endTime - currentTime);
-        return;
-      }
-
-      do {
-        deletedKeys = [];
-        var newCurrentTime = scheduledLookup.shift();
-        tickDate(newCurrentTime - currentTime);
-
-        currentTime = newCurrentTime;
-
-        var funcsToRun = scheduledFunctions[currentTime];
-
-        delete scheduledFunctions[currentTime];
-
-        forEachFunction(funcsToRun, function(funcToRun) {
-          if (funcToRun.recurring) {
-            reschedule(funcToRun);
-          }
-        });
-
-        forEachFunction(funcsToRun, function(funcToRun) {
-          if (j$.util.arrayContains(deletedKeys, funcToRun.timeoutKey)) {
-            // skip a timeoutKey deleted whilst we were running
-            return;
-          }
-          funcToRun.funcToCall.apply(null, funcToRun.params || []);
-        });
-        deletedKeys = [];
-      } while (
-        scheduledLookup.length > 0 &&
-        // checking first if we're out of time prevents setTimeout(0)
-        // scheduled in a funcToRun from forcing an extra iteration
-        currentTime !== endTime &&
-        scheduledLookup[0] <= endTime
-      );
-
-      // ran out of functions to call, but still time left on the clock
-      if (currentTime !== endTime) {
-        tickDate(endTime - currentTime);
-      }
-    }
+    return index;
   }
 
   return DelayedFunctionScheduler;

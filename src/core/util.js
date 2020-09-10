@@ -1,42 +1,8 @@
 getJasmineRequireObj().util = function(j$) {
-  var util = {};
-
-  util.inherit = function(childClass, parentClass) {
-    var Subclass = function() {};
-    Subclass.prototype = parentClass.prototype;
-    childClass.prototype = new Subclass();
-  };
-
-  util.htmlEscape = function(str) {
-    if (!str) {
-      return str;
-    }
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  };
-
-  util.argsToArray = function(args) {
-    var arrayOfArgs = [];
-    for (var i = 0; i < args.length; i++) {
-      arrayOfArgs.push(args[i]);
-    }
-    return arrayOfArgs;
-  };
+  const util = {};
 
   util.isUndefined = function(obj) {
     return obj === void 0;
-  };
-
-  util.arrayContains = function(array, search) {
-    var i = array.length;
-    while (i--) {
-      if (array[i] === search) {
-        return true;
-      }
-    }
-    return false;
   };
 
   util.clone = function(obj) {
@@ -44,8 +10,8 @@ getJasmineRequireObj().util = function(j$) {
       return obj.slice();
     }
 
-    var cloned = {};
-    for (var prop in obj) {
+    const cloned = {};
+    for (const prop in obj) {
       if (obj.hasOwnProperty(prop)) {
         cloned[prop] = obj[prop];
       }
@@ -55,24 +21,23 @@ getJasmineRequireObj().util = function(j$) {
   };
 
   util.cloneArgs = function(args) {
-    var clonedArgs = [];
-    var argsAsArray = j$.util.argsToArray(args);
-    for (var i = 0; i < argsAsArray.length; i++) {
-      var str = Object.prototype.toString.apply(argsAsArray[i]),
+    return Array.from(args).map(function(arg) {
+      const str = Object.prototype.toString.apply(arg),
         primitives = /^\[object (Boolean|String|RegExp|Number)/;
 
       // All falsey values are either primitives, `null`, or `undefined.
-      if (!argsAsArray[i] || str.match(primitives)) {
-        clonedArgs.push(argsAsArray[i]);
+      if (!arg || str.match(primitives)) {
+        return arg;
+      } else if (str === '[object Date]') {
+        return new Date(arg.valueOf());
       } else {
-        clonedArgs.push(j$.util.clone(argsAsArray[i]));
+        return j$.util.clone(arg);
       }
-    }
-    return clonedArgs;
+    });
   };
 
   util.getPropertyDescriptor = function(obj, methodName) {
-    var descriptor,
+    let descriptor,
       proto = obj;
 
     do {
@@ -83,37 +48,15 @@ getJasmineRequireObj().util = function(j$) {
     return descriptor;
   };
 
-  util.objectDifference = function(obj, toRemove) {
-    var diff = {};
-
-    for (var key in obj) {
-      if (util.has(obj, key) && !util.has(toRemove, key)) {
-        diff[key] = obj[key];
-      }
-    }
-
-    return diff;
-  };
-
   util.has = function(obj, key) {
     return Object.prototype.hasOwnProperty.call(obj, key);
   };
 
   util.errorWithStack = function errorWithStack() {
-    // Don't throw and catch if we don't have to, because it makes it harder
-    // for users to debug their code with exception breakpoints.
-    var error = new Error();
-
-    if (error.stack) {
-      return error;
-    }
-
-    // But some browsers (e.g. Phantom) only provide a stack trace if we throw.
-    try {
-      throw new Error();
-    } catch (e) {
-      return e;
-    }
+    // Don't throw and catch. That makes it harder for users to debug their
+    // code with exception breakpoints, and it's unnecessary since all
+    // supported environments populate new Error().stack
+    return new Error();
   };
 
   function callerFile() {
@@ -150,7 +93,7 @@ getJasmineRequireObj().util = function(j$) {
   }
 
   util.jasmineFile = (function() {
-    var result;
+    let result;
 
     return function() {
       if (!result) {
@@ -161,22 +104,18 @@ getJasmineRequireObj().util = function(j$) {
     };
   })();
 
-  function StopIteration() {}
-  StopIteration.prototype = Object.create(Error.prototype);
-  StopIteration.prototype.constructor = StopIteration;
+  util.validateTimeout = function(timeout, msgPrefix) {
+    // Timeouts are implemented with setTimeout, which only supports a limited
+    // range of values. The limit is unspecified, as is the behavior when it's
+    // exceeded. But on all currently supported JS runtimes, setTimeout calls
+    // the callback immediately when the timeout is greater than 2147483647
+    // (the maximum value of a signed 32 bit integer).
+    const max = 2147483647;
 
-  // useful for maps and sets since `forEach` is the only IE11-compatible way to iterate them
-  util.forEachBreakable = function(iterable, iteratee) {
-    function breakLoop() {
-      throw new StopIteration();
-    }
-
-    try {
-      iterable.forEach(function(value, key) {
-        iteratee(breakLoop, value, key, iterable);
-      });
-    } catch (error) {
-      if (!(error instanceof StopIteration)) throw error;
+    if (timeout > max) {
+      throw new Error(
+        (msgPrefix || 'Timeout value') + ' cannot be greater than ' + max
+      );
     }
   };
 

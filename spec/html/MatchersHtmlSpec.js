@@ -1,5 +1,5 @@
 describe('MatchersSpec - HTML Dependent', function() {
-  var env, spec;
+  let env, spec;
 
   beforeEach(function() {
     env = new jasmineUnderTest.Env();
@@ -19,6 +19,10 @@ describe('MatchersSpec - HTML Dependent', function() {
     });
   });
 
+  afterEach(function() {
+    env.cleanup_();
+  });
+
   function match(value) {
     return spec.expect(value);
   }
@@ -28,8 +32,8 @@ describe('MatchersSpec - HTML Dependent', function() {
   }
 
   xit('toEqual with DOM nodes', function() {
-    var nodeA = document.createElement('div');
-    var nodeB = document.createElement('div');
+    const nodeA = document.createElement('div');
+    const nodeB = document.createElement('div');
     expect(match(nodeA).toEqual(nodeA)).toPass();
     expect(match(nodeA).toEqual(nodeB)).toFail();
   });

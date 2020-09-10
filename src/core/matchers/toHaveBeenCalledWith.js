@@ -1,6 +1,8 @@
 getJasmineRequireObj().toHaveBeenCalledWith = function(j$) {
-
-  var getErrorMsg = j$.formatErrorMsg('<toHaveBeenCalledWith>', 'expect(<spyObj>).toHaveBeenCalledWith(...arguments)');
+  const getErrorMsg = j$.formatErrorMsg(
+    '<toHaveBeenCalledWith>',
+    'expect(<spyObj>).toHaveBeenCalledWith(...arguments)'
+  );
 
   /**
    * {@link expect} the actual (a {@link Spy}) to have been called with particular arguments at least once.
@@ -11,52 +13,82 @@ getJasmineRequireObj().toHaveBeenCalledWith = function(j$) {
    * @example
    * expect(mySpy).toHaveBeenCalledWith('foo', 'bar', 2);
    */
-  function toHaveBeenCalledWith(util, customEqualityTesters) {
+  function toHaveBeenCalledWith(matchersUtil) {
     return {
       compare: function() {
-        var args = Array.prototype.slice.call(arguments, 0),
+        const args = Array.prototype.slice.call(arguments, 0),
           actual = args[0],
           expectedArgs = args.slice(1),
           result = { pass: false };
 
         if (!j$.isSpy(actual)) {
-          throw new Error(getErrorMsg('Expected a spy, but got ' + j$.pp(actual) + '.'));
+          throw new Error(
+            getErrorMsg(
+              'Expected a spy, but got ' + matchersUtil.pp(actual) + '.'
+            )
+          );
         }
 
         if (!actual.calls.any()) {
           result.message = function() {
-            return 'Expected spy ' + actual.and.identity + ' to have been called with:\n' +
-              '  ' + j$.pp(expectedArgs) +
-              '\nbut it was never called.';
+            return (
+              'Expected spy ' +
+              actual.and.identity +
+              ' to have been called with:\n' +
+              '  ' +
+              matchersUtil.pp(expectedArgs) +
+              '\nbut it was never called.'
+            );
           };
           return result;
         }
 
-        if (util.contains(actual.calls.allArgs(), expectedArgs, customEqualityTesters)) {
+        if (matchersUtil.contains(actual.calls.allArgs(), expectedArgs)) {
           result.pass = true;
           result.message = function() {
-            return 'Expected spy ' + actual.and.identity + ' not to have been called with:\n' +
-              '  ' + j$.pp(expectedArgs) +
-              '\nbut it was.';
+            return (
+              'Expected spy ' +
+              actual.and.identity +
+              ' not to have been called with:\n' +
+              '  ' +
+              matchersUtil.pp(expectedArgs) +
+              '\nbut it was.'
+            );
           };
         } else {
           result.message = function() {
-            var prettyPrintedCalls = actual.calls.allArgs().map(function(argsForCall) {
-              return '  ' + j$.pp(argsForCall);
-            });
+            const prettyPrintedCalls = actual.calls
+              .allArgs()
+              .map(function(argsForCall) {
+                return '  ' + matchersUtil.pp(argsForCall);
+              });
 
-            var diffs = actual.calls.allArgs().map(function(argsForCall, callIx) {
-            var diffBuilder = new j$.DiffBuilder();
-              util.equals(argsForCall, expectedArgs, customEqualityTesters, diffBuilder);
-              return 'Call ' + callIx + ':\n' +
-                diffBuilder.getMessage().replace(/^/mg, '  ');
-            });
+            const diffs = actual.calls
+              .allArgs()
+              .map(function(argsForCall, callIx) {
+                const diffBuilder = new j$.DiffBuilder();
+                matchersUtil.equals(argsForCall, expectedArgs, diffBuilder);
+                return (
+                  'Call ' +
+                  callIx +
+                  ':\n' +
+                  diffBuilder.getMessage().replace(/^/gm, '  ')
+                );
+              });
 
-            return 'Expected spy ' + actual.and.identity + ' to have been called with:\n' +
-              '  ' + j$.pp(expectedArgs) + '\n' + '' +
+            return (
+              'Expected spy ' +
+              actual.and.identity +
+              ' to have been called with:\n' +
+              '  ' +
+              matchersUtil.pp(expectedArgs) +
+              '\n' +
+              '' +
               'but actual calls were:\n' +
-              prettyPrintedCalls.join(',\n') + '.\n\n' +
-              diffs.join('\n');
+              prettyPrintedCalls.join(',\n') +
+              '.\n\n' +
+              diffs.join('\n')
+            );
           };
         }
 

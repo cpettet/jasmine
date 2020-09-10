@@ -6,8 +6,8 @@ getJasmineRequireObj().Expectation = function(j$) {
   function Expectation(options) {
     this.expector = new j$.Expector(options);
 
-    var customMatchers = options.customMatchers || {};
-    for (var matcherName in customMatchers) {
+    const customMatchers = options.customMatchers || {};
+    for (const matcherName in customMatchers) {
       this[matcherName] = wrapSyncCompare(
         matcherName,
         customMatchers[matcherName]
@@ -43,21 +43,42 @@ getJasmineRequireObj().Expectation = function(j$) {
   });
 
   /**
-   * Asynchronous matchers.
+   * Asynchronous matchers that operate on an actual value which is a promise,
+   * and return a promise.
+   *
+   * Most async matchers will wait indefinitely for the promise to be resolved
+   * or rejected, resulting in a spec timeout if that never happens. If you
+   * expect that the promise will already be resolved or rejected at the time
+   * the matcher is called, you can use the {@link async-matchers#already}
+   * modifier to get a faster failure with a more helpful message.
+   *
+   * Note: Specs must await the result of each async matcher, return the
+   * promise returned by the matcher, or return a promise that's derived from
+   * the one returned by the matcher. Otherwise the matcher will not be
+   * evaluated before the spec completes.
+   *
+   * @example
+   * // Good
+   * await expectAsync(aPromise).toBeResolved();
+   * @example
+   * // Good
+   * return expectAsync(aPromise).toBeResolved();
+   * @example
+   * // Good
+   * return expectAsync(aPromise).toBeResolved()
+   *  .then(function() {
+   *    // more spec code
+   *  });
+   * @example
+   * // Bad
+   * expectAsync(aPromise).toBeResolved();
    * @namespace async-matchers
    */
   function AsyncExpectation(options) {
-    var global = options.global || j$.getGlobal();
     this.expector = new j$.Expector(options);
 
-    if (!global.Promise) {
-      throw new Error(
-        'expectAsync is unavailable because the environment does not support promises.'
-      );
-    }
-
-    var customAsyncMatchers = options.customAsyncMatchers || {};
-    for (var matcherName in customAsyncMatchers) {
+    const customAsyncMatchers = options.customAsyncMatchers || {};
+    for (const matcherName in customAsyncMatchers) {
       this[matcherName] = wrapAsyncCompare(
         matcherName,
         customAsyncMatchers[matcherName]
@@ -93,43 +114,59 @@ getJasmineRequireObj().Expectation = function(j$) {
     }
   });
 
+  /**
+   * Fail as soon as possible if the actual is pending.
+   * Otherwise evaluate the matcher.
+   * @member
+   * @name async-matchers#already
+   * @since 3.8.0
+   * @type {async-matchers}
+   * @example
+   * await expectAsync(myPromise).already.toBeResolved();
+   * @example
+   * return expectAsync(myPromise).already.toBeResolved();
+   */
+  Object.defineProperty(AsyncExpectation.prototype, 'already', {
+    get: function() {
+      return addFilter(this, expectSettledPromiseFilter);
+    }
+  });
+
   function wrapSyncCompare(name, matcherFactory) {
     return function() {
-      var result = this.expector.compare(name, matcherFactory, arguments);
+      const result = this.expector.compare(name, matcherFactory, arguments);
       this.expector.processResult(result);
     };
   }
 
   function wrapAsyncCompare(name, matcherFactory) {
     return function() {
-      var self = this;
-
       // Capture the call stack here, before we go async, so that it will contain
       // frames that are relevant to the user instead of just parts of Jasmine.
-      var errorForStack = j$.util.errorWithStack();
+      const errorForStack = j$.util.errorWithStack();
 
       return this.expector
         .compare(name, matcherFactory, arguments)
-        .then(function(result) {
-          self.expector.processResult(result, errorForStack);
+        .then(result => {
+          this.expector.processResult(result, errorForStack);
         });
     };
   }
 
   function addCoreMatchers(prototype, matchers, wrapper) {
-    for (var matcherName in matchers) {
-      var matcher = matchers[matcherName];
+    for (const matcherName in matchers) {
+      const matcher = matchers[matcherName];
       prototype[matcherName] = wrapper(matcherName, matcher);
     }
   }
 
   function addFilter(source, filter) {
-    var result = Object.create(source);
+    const result = Object.create(source);
     result.expector = source.expector.addFilter(filter);
     return result;
   }
 
-  function negatedFailureMessage(result, matcherName, args, util) {
+  function negatedFailureMessage(result, matcherName, args, matchersUtil) {
     if (result.message) {
       if (j$.isFunction_(result.message)) {
         return result.message();
@@ -141,7 +178,7 @@ getJasmineRequireObj().Expectation = function(j$) {
     args = args.slice();
     args.unshift(true);
     args.unshift(matcherName);
-    return util.buildFailureMessage.apply(null, args);
+    return matchersUtil.buildFailureMessage.apply(matchersUtil, args);
   }
 
   function negate(result) {
@@ -149,7 +186,7 @@ getJasmineRequireObj().Expectation = function(j$) {
     return result;
   }
 
-  var syncNegatingFilter = {
+  const syncNegatingFilter = {
     selectComparisonFunc: function(matcher) {
       function defaultNegativeCompare() {
         return negate(matcher.compare.apply(null, arguments));
@@ -160,7 +197,7 @@ getJasmineRequireObj().Expectation = function(j$) {
     buildFailureMessage: negatedFailureMessage
   };
 
-  var asyncNegatingFilter = {
+  const asyncNegatingFilter = {
     selectComparisonFunc: function(matcher) {
       function defaultNegativeCompare() {
         return matcher.compare.apply(this, arguments).then(negate);
@@ -171,13 +208,42 @@ getJasmineRequireObj().Expectation = function(j$) {
     buildFailureMessage: negatedFailureMessage
   };
 
+  const expectSettledPromiseFilter = {
+    selectComparisonFunc: function(matcher) {
+      return function(actual) {
+        const matcherArgs = arguments;
+
+        return j$.isPending_(actual).then(function(isPending) {
+          if (isPending) {
+            return {
+              pass: false,
+              message:
+                'Expected a promise to be settled (via ' +
+                'expectAsync(...).already) but it was pending.'
+            };
+          } else {
+            return matcher.compare.apply(null, matcherArgs);
+          }
+        });
+      };
+    }
+  };
+
   function ContextAddingFilter(message) {
     this.message = message;
   }
 
   ContextAddingFilter.prototype.modifyFailureMessage = function(msg) {
-    return this.message + ': ' + msg;
+    if (msg.indexOf('\n') === -1) {
+      return this.message + ': ' + msg;
+    } else {
+      return this.message + ':\n' + indent(msg);
+    }
   };
+
+  function indent(s) {
+    return s.replace(/^/gm, '    ');
+  }
 
   return {
     factory: function(options) {

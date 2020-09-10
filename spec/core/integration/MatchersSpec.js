@@ -1,103 +1,167 @@
 describe('Matchers (Integration)', function() {
+  let env;
+
+  beforeEach(function() {
+    env = new jasmineUnderTest.Env();
+  });
+
+  afterEach(function() {
+    env.cleanup_();
+  });
+
   function verifyPasses(expectations) {
-    it('passes', function(done) {
-      var env = new jasmineUnderTest.Env();
+    it('passes', async function() {
       env.it('a spec', function() {
         expectations(env);
       });
 
-      var specExpectations = function(result) {
-        expect(result.status).toEqual('passed');
-        expect(result.passedExpectations.length)
-          .withContext('Number of passed expectations')
-          .toEqual(1);
-        expect(result.failedExpectations.length)
-          .withContext('Number of failed expectations')
-          .toEqual(0);
-        expect(result.failedExpectations[0] && result.failedExpectations[0].message)
-          .withContext('Failure message')
-          .toBeUndefined();
-      };
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
 
-      env.addReporter({ specDone: specExpectations, jasmineDone: done });
-      env.execute();
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('passed');
+      expect(result.passedExpectations.length)
+        .withContext('Number of passed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(0);
+      expect(
+        result.failedExpectations[0] && result.failedExpectations[0].message
+      )
+        .withContext('Failure message')
+        .toBeUndefined();
     });
   }
 
   function verifyFails(expectations) {
-    it('fails', function(done) {
-      var env = new jasmineUnderTest.Env();
+    it('fails', async function() {
       env.it('a spec', function() {
         expectations(env);
       });
 
-      var specExpectations = function(result) {
-        expect(result.status).toEqual('failed');
-        expect(result.failedExpectations.length)
-          .withContext('Number of failed expectations')
-          .toEqual(1);
-        expect(result.failedExpectations[0].message)
-          .withContext('Failed with a thrown error rather than a matcher failure')
-          .not.toMatch(/^Error: /);
-        expect(result.failedExpectations[0].matcherName).withContext('Matcher name')
-          .not.toEqual('');
-      };
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
 
-      env.addReporter({ specDone: specExpectations, jasmineDone: done });
-      env.execute();
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message)
+        .withContext('Failed with a thrown error rather than a matcher failure')
+        .not.toMatch(/^Error: /);
+      expect(result.failedExpectations[0].message)
+        .withContext(
+          'Failed with a thrown type error rather than a matcher failure'
+        )
+        .not.toMatch(/^TypeError: /);
+      expect(result.failedExpectations[0].matcherName)
+        .withContext('Matcher name')
+        .not.toEqual('');
+    });
+  }
+
+  function verifyFailsWithCustomObjectFormatters(config) {
+    it('uses custom object formatters', async function() {
+      env.it('a spec', function() {
+        env.addCustomObjectFormatter(config.formatter);
+        config.expectations(env);
+      });
+
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
+
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message).toEqual(
+        config.expectedMessage
+      );
     });
   }
 
   function verifyPassesAsync(expectations) {
-    it('passes', function(done) {
-      jasmine.getEnv().requirePromises();
-      var env = new jasmineUnderTest.Env();
-
+    it('passes', async function() {
       env.it('a spec', function() {
         return expectations(env);
       });
 
-      var specExpectations = function(result) {
-        expect(result.status).toEqual('passed');
-        expect(result.passedExpectations.length)
-          .withContext('Number of passed expectations')
-          .toEqual(1);
-        expect(result.failedExpectations.length)
-          .withContext('Number of failed expectations')
-          .toEqual(0);
-        expect(result.failedExpectations[0] && result.failedExpectations[0].message)
-          .withContext('Failure message')
-          .toBeUndefined();
-      };
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
 
-      env.addReporter({ specDone: specExpectations, jasmineDone: done });
-      env.execute();
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('passed');
+      expect(result.passedExpectations.length)
+        .withContext('Number of passed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(0);
+      expect(
+        result.failedExpectations[0] && result.failedExpectations[0].message
+      )
+        .withContext('Failure message')
+        .toBeUndefined();
     });
   }
 
   function verifyFailsAsync(expectations) {
-    it('fails', function(done) {
-      var env = new jasmineUnderTest.Env();
-      jasmine.getEnv().requirePromises();
-
+    it('fails', async function() {
       env.it('a spec', function() {
         return expectations(env);
       });
 
-      var specExpectations = function(result) {
-        expect(result.status).toEqual('failed');
-        expect(result.failedExpectations.length)
-          .withContext('Number of failed expectations')
-          .toEqual(1);
-        expect(result.failedExpectations[0].message)
-          .withContext('Failed with a thrown error rather than a matcher failure')
-          .not.toMatch(/^Error: /);
-        expect(result.failedExpectations[0].matcherName).withContext('Matcher name')
-          .not.toEqual('');
-      };
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
 
-      env.addReporter({ specDone: specExpectations, jasmineDone: done });
-      env.execute();
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message)
+        .withContext('Failed with a thrown error rather than a matcher failure')
+        .not.toMatch(/^Error: /);
+      expect(result.failedExpectations[0].matcherName)
+        .withContext('Matcher name')
+        .not.toEqual('');
+    });
+  }
+
+  function verifyFailsWithCustomObjectFormattersAsync(config) {
+    it('uses custom object formatters', async function() {
+      const env = new jasmineUnderTest.Env();
+      env.it('a spec', function() {
+        env.addCustomObjectFormatter(config.formatter);
+        return config.expectations(env);
+      });
+
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
+
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message).toEqual(
+        config.expectedMessage
+      );
     });
   }
 
@@ -217,6 +281,16 @@ describe('Matchers (Integration)', function() {
     verifyFails(function(env) {
       env.expect(2).toBeNaN();
     });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        env.expect(1).toBeNaN();
+      },
+      expectedMessage: 'Expected |1| to be NaN.'
+    });
   });
 
   describe('toBeNegativeInfinity', function() {
@@ -226,6 +300,16 @@ describe('Matchers (Integration)', function() {
 
     verifyFails(function(env) {
       env.expect(2).toBeNegativeInfinity();
+    });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        env.expect(1).toBeNegativeInfinity();
+      },
+      expectedMessage: 'Expected |1| to be -Infinity.'
     });
   });
 
@@ -247,6 +331,16 @@ describe('Matchers (Integration)', function() {
     verifyFails(function(env) {
       env.expect(2).toBePositiveInfinity();
     });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        env.expect(1).toBePositiveInfinity();
+      },
+      expectedMessage: 'Expected |1| to be Infinity.'
+    });
   });
 
   describe('toBeResolved', function() {
@@ -261,11 +355,26 @@ describe('Matchers (Integration)', function() {
 
   describe('toBeResolvedTo', function() {
     verifyPassesAsync(function(env) {
-      return env.expectAsync(Promise.resolve('foo')).toBeResolvedTo('foo');
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      return env.expectAsync(Promise.resolve('5')).toBeResolvedTo(5);
     });
 
     verifyFailsAsync(function(env) {
       return env.expectAsync(Promise.resolve('foo')).toBeResolvedTo('bar');
+    });
+
+    verifyFailsWithCustomObjectFormattersAsync({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        return env.expectAsync(Promise.resolve('x')).toBeResolvedTo('y');
+      },
+      expectedMessage:
+        'Expected a promise to be resolved to |y| ' +
+        'but it was resolved to |x|.'
     });
   });
 
@@ -281,21 +390,52 @@ describe('Matchers (Integration)', function() {
 
   describe('toBeRejectedWith', function() {
     verifyPassesAsync(function(env) {
-      return env.expectAsync(Promise.reject('nope')).toBeRejectedWith('nope');
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      return env.expectAsync(Promise.reject('5')).toBeRejectedWith(5);
     });
 
     verifyFailsAsync(function(env) {
       return env.expectAsync(Promise.resolve()).toBeRejectedWith('nope');
     });
+
+    verifyFailsWithCustomObjectFormattersAsync({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        return env.expectAsync(Promise.reject('x')).toBeRejectedWith('y');
+      },
+      expectedMessage:
+        'Expected a promise to be rejected with |y| ' +
+        'but it was rejected with |x|.'
+    });
   });
 
   describe('toBeRejectedWithError', function() {
     verifyPassesAsync(function(env) {
-      return env.expectAsync(Promise.reject(new Error())).toBeRejectedWithError(Error);
+      return env
+        .expectAsync(Promise.reject(new Error()))
+        .toBeRejectedWithError(Error);
     });
 
     verifyFailsAsync(function(env) {
       return env.expectAsync(Promise.resolve()).toBeRejectedWithError(Error);
+    });
+
+    verifyFailsWithCustomObjectFormattersAsync({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        return env
+          .expectAsync(Promise.reject('foo'))
+          .toBeRejectedWithError('foo');
+      },
+      expectedMessage:
+        'Expected a promise to be rejected with Error: |foo| ' +
+        'but it was rejected with |foo|.'
     });
   });
 
@@ -331,7 +471,10 @@ describe('Matchers (Integration)', function() {
 
   describe('toContain', function() {
     verifyPasses(function(env) {
-      env.expect('foobar').toContain('oo');
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      env.expect(['1', '2', '3']).toContain(2);
     });
 
     verifyFails(function(env) {
@@ -341,37 +484,66 @@ describe('Matchers (Integration)', function() {
 
   describe('toEqual', function() {
     verifyPasses(function(env) {
-      env.expect('a').toEqual('a');
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      env.expect(5).toEqual('5');
     });
 
     verifyFails(function(env) {
       env.expect('a').toEqual('b');
     });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        if (val === 5) {
+          return 'five';
+        } else if (val === 4) {
+          return 'four';
+        }
+      },
+      expectations: function(env) {
+        env.expect([{ foo: 4 }]).toEqual([{ foo: 5 }]);
+      },
+      expectedMessage: 'Expected $[0].foo = four to equal five.'
+    });
+  });
+
+  describe('toHaveSize', function() {
+    verifyPasses(function(env) {
+      env.expect(['a', 'b']).toHaveSize(2);
+    });
+
+    verifyFails(function(env) {
+      env.expect(['a', 'b']).toHaveSize(1);
+    });
   });
 
   describe('toHaveBeenCalled', function() {
     verifyPasses(function(env) {
-      var spy = env.createSpy('spy');
+      const spy = env.createSpy('spy');
       spy();
       env.expect(spy).toHaveBeenCalled();
     });
 
     verifyFails(function(env) {
-      var spy = env.createSpy('spy');
+      const spy = env.createSpy('spy');
       env.expect(spy).toHaveBeenCalled();
     });
   });
 
   describe('toHaveBeenCalledBefore', function() {
     verifyPasses(function(env) {
-      var a = env.createSpy('a'), b = env.createSpy('b');
+      const a = env.createSpy('a'),
+        b = env.createSpy('b');
       a();
       b();
       env.expect(a).toHaveBeenCalledBefore(b);
     });
 
     verifyFails(function(env) {
-      var a = env.createSpy('a'), b = env.createSpy('b');
+      const a = env.createSpy('a'),
+        b = env.createSpy('b');
       b();
       a();
       env.expect(a).toHaveBeenCalledBefore(b);
@@ -380,27 +552,60 @@ describe('Matchers (Integration)', function() {
 
   describe('toHaveBeenCalledTimes', function() {
     verifyPasses(function(env) {
-      var spy = env.createSpy('spy');
+      const spy = env.createSpy('spy');
       spy();
       env.expect(spy).toHaveBeenCalledTimes(1);
     });
 
     verifyFails(function(env) {
-      var spy = env.createSpy('spy');
+      const spy = env.createSpy('spy');
       env.expect(spy).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('toHaveBeenCalledWith', function() {
     verifyPasses(function(env) {
-      var spy = env.createSpy();
-      spy('foo');
-      env.expect(spy).toHaveBeenCalledWith('foo');
+      const spy = env.createSpy();
+      spy('5');
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      env.expect(spy).toHaveBeenCalledWith(5);
     });
 
     verifyFails(function(env) {
-      var spy = env.createSpy();
+      const spy = env.createSpy();
       env.expect(spy).toHaveBeenCalledWith('foo');
+    });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        const spy = env.createSpy('foo');
+        env.expect(spy).toHaveBeenCalledWith('x');
+      },
+      expectedMessage:
+        'Expected spy foo to have been called with:\n' +
+        '  |x|\n' +
+        'but it was never called.'
+    });
+  });
+
+  describe('toHaveBeenCalledOnceWith', function() {
+    verifyPasses(function(env) {
+      const spy = env.createSpy();
+      spy('5', 3);
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      env.expect(spy).toHaveBeenCalledOnceWith(5, 3);
+    });
+
+    verifyFails(function(env) {
+      const spy = env.createSpy();
+      env.expect(spy).toHaveBeenCalledOnceWith(5, 3);
     });
   });
 
@@ -410,15 +615,37 @@ describe('Matchers (Integration)', function() {
     });
 
     verifyPasses(function(env) {
-      var domHelpers = jasmine.getEnv().domHelpers();
-      var el = domHelpers.createElementWithClassName('foo');
+      const domHelpers = jasmine.getEnv().domHelpers();
+      const el = domHelpers.createElementWithClassName('foo');
       env.expect(el).toHaveClass('foo');
     });
 
     verifyFails(function(env) {
-      var domHelpers = jasmine.getEnv().domHelpers();
-      var el = domHelpers.createElementWithClassName('foo');
+      const domHelpers = jasmine.getEnv().domHelpers();
+      const el = domHelpers.createElementWithClassName('foo');
       env.expect(el).toHaveClass('bar');
+    });
+  });
+
+  describe('toHaveSpyInteractions', function() {
+    let spyObj;
+    beforeEach(function() {
+      spyObj = env.createSpyObj('NewClass', ['spyA', 'spyB']);
+      spyObj.otherMethod = function() {};
+    });
+
+    verifyPasses(function(env) {
+      spyObj.spyA();
+      env.expect(spyObj).toHaveSpyInteractions();
+    });
+
+    verifyFails(function(env) {
+      env.expect(spyObj).toHaveSpyInteractions();
+    });
+
+    verifyFails(function(env) {
+      spyObj.otherMethod();
+      env.expect(spyObj).toHaveSpyInteractions();
     });
   });
 
@@ -434,21 +661,60 @@ describe('Matchers (Integration)', function() {
 
   describe('toThrow', function() {
     verifyPasses(function(env) {
-      env.expect(function() { throw new Error(); }).toThrow();
+      env.addCustomEqualityTester(function(a, b) {
+        return a.toString() === b.toString();
+      });
+      env
+        .expect(function() {
+          throw '5';
+        })
+        .toThrow(5);
     });
 
     verifyFails(function(env) {
       env.expect(function() {}).toThrow();
     });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        env
+          .expect(function() {
+            throw 'x';
+          })
+          .not.toThrow();
+      },
+      expectedMessage: 'Expected function not to throw, but it threw |x|.'
+    });
   });
 
   describe('toThrowError', function() {
     verifyPasses(function(env) {
-      env.expect(function() { throw new Error(); }).toThrowError();
+      env
+        .expect(function() {
+          throw new Error();
+        })
+        .toThrowError();
     });
 
     verifyFails(function(env) {
-      env.expect(function() { }).toThrowError();
+      env.expect(function() {}).toThrowError();
+    });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        env
+          .expect(function() {
+            throw 'x';
+          })
+          .toThrowError();
+      },
+      expectedMessage: 'Expected function to throw an Error, but it threw |x|.'
     });
   });
 
@@ -458,11 +724,110 @@ describe('Matchers (Integration)', function() {
     }
 
     verifyPasses(function(env) {
-      env.expect(throws).toThrowMatching(function() { return true; });
+      env.expect(throws).toThrowMatching(function() {
+        return true;
+      });
     });
 
     verifyFails(function(env) {
-      env.expect(throws).toThrowMatching(function() { return false; });
+      env.expect(throws).toThrowMatching(function() {
+        return false;
+      });
+    });
+
+    verifyFailsWithCustomObjectFormatters({
+      formatter: function(val) {
+        return '|' + val + '|';
+      },
+      expectations: function(env) {
+        env
+          .expect(function() {
+            throw new Error('nope');
+          })
+          .toThrowMatching(function() {
+            return false;
+          });
+      },
+      expectedMessage:
+        'Expected function to throw an exception matching ' +
+        'a predicate, but it threw Error with message |nope|.'
+    });
+  });
+
+  describe('When an async matcher is used with .already()', function() {
+    it('propagates the matcher result when the promise is resolved', async function() {
+      env.it('a spec', function() {
+        return env.expectAsync(Promise.resolve()).already.toBeRejected();
+      });
+
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
+
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message).toEqual(
+        'Expected [object Promise] to be rejected.'
+      );
+      expect(result.failedExpectations[0].matcherName)
+        .withContext('Matcher name')
+        .not.toEqual('');
+    });
+
+    it('propagates the matcher result when the promise is rejected', async function() {
+      env.it('a spec', function() {
+        return env
+          .expectAsync(Promise.reject(new Error('nope')))
+          .already.toBeResolved();
+      });
+
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
+
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message).toEqual(
+        'Expected a promise to be resolved but it was ' +
+          'rejected with Error: nope.'
+      );
+      expect(result.failedExpectations[0].matcherName)
+        .withContext('Matcher name')
+        .not.toEqual('');
+    });
+
+    it('fails when the promise is pending', async function() {
+      const promise = new Promise(function() {});
+
+      env.it('a spec', function() {
+        return env.expectAsync(promise).already.toBeResolved();
+      });
+
+      const reporter = jasmine.createSpyObj('reporter', ['specDone']);
+      env.addReporter(reporter);
+      await env.execute();
+
+      expect(reporter.specDone).toHaveBeenCalledTimes(1);
+      const result = reporter.specDone.calls.argsFor(0)[0];
+      expect(result.status).toEqual('failed');
+      expect(result.failedExpectations.length)
+        .withContext('Number of failed expectations')
+        .toEqual(1);
+      expect(result.failedExpectations[0].message).toEqual(
+        'Expected a promise to be settled ' +
+          '(via expectAsync(...).already) but it was pending.'
+      );
+      expect(result.failedExpectations[0].matcherName)
+        .withContext('Matcher name')
+        .not.toEqual('');
     });
   });
 });

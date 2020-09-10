@@ -1,19 +1,24 @@
 getJasmineRequireObj().SpyFactory = function(j$) {
-  function SpyFactory(getCustomStrategies, getDefaultStrategyFn, getPromise) {
-    var self = this;
-
+  function SpyFactory(
+    getCustomStrategies,
+    getDefaultStrategyFn,
+    getMatchersUtil
+  ) {
     this.createSpy = function(name, originalFn) {
-      return j$.Spy(
-        name,
+      if (j$.isFunction_(name) && originalFn === undefined) {
+        originalFn = name;
+        name = originalFn.name;
+      }
+
+      return j$.Spy(name, getMatchersUtil(), {
         originalFn,
-        getCustomStrategies(),
-        getDefaultStrategyFn(),
-        getPromise
-      );
+        customStrategies: getCustomStrategies(),
+        defaultStrategyFn: getDefaultStrategyFn()
+      });
     };
 
     this.createSpyObj = function(baseName, methodNames, propertyNames) {
-      var baseNameIsCollection =
+      const baseNameIsCollection =
         j$.isObject_(baseName) || j$.isArray_(baseName);
 
       if (baseNameIsCollection) {
@@ -22,24 +27,24 @@ getJasmineRequireObj().SpyFactory = function(j$) {
         baseName = 'unknown';
       }
 
-      var obj = {};
-      var spy, descriptor;
+      const obj = {};
 
-      var methods = normalizeKeyValues(methodNames);
-      for (var i = 0; i < methods.length; i++) {
-        spy = obj[methods[i][0]] = self.createSpy(
+      const methods = normalizeKeyValues(methodNames);
+      for (let i = 0; i < methods.length; i++) {
+        const spy = (obj[methods[i][0]] = this.createSpy(
           baseName + '.' + methods[i][0]
-        );
+        ));
         if (methods[i].length > 1) {
           spy.and.returnValue(methods[i][1]);
         }
       }
 
-      var properties = normalizeKeyValues(propertyNames);
-      for (var i = 0; i < properties.length; i++) {
-        descriptor = {
-          get: self.createSpy(baseName + '.' + properties[i][0] + '.get'),
-          set: self.createSpy(baseName + '.' + properties[i][0] + '.set')
+      const properties = normalizeKeyValues(propertyNames);
+      for (let i = 0; i < properties.length; i++) {
+        const descriptor = {
+          enumerable: true,
+          get: this.createSpy(baseName + '.' + properties[i][0] + '.get'),
+          set: this.createSpy(baseName + '.' + properties[i][0] + '.set')
         };
         if (properties[i].length > 1) {
           descriptor.get.and.returnValue(properties[i][1]);
@@ -57,13 +62,13 @@ getJasmineRequireObj().SpyFactory = function(j$) {
   }
 
   function normalizeKeyValues(object) {
-    var result = [];
+    const result = [];
     if (j$.isArray_(object)) {
-      for (var i = 0; i < object.length; i++) {
+      for (let i = 0; i < object.length; i++) {
         result.push([object[i]]);
       }
     } else if (j$.isObject_(object)) {
-      for (var key in object) {
+      for (const key in object) {
         if (object.hasOwnProperty(key)) {
           result.push([key, object[key]]);
         }

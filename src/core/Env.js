@@ -1,23 +1,21 @@
 getJasmineRequireObj().Env = function(j$) {
   /**
-   * _Note:_ Do not construct this directly, Jasmine will make one during booting.
-   * @name Env
+   * @class Env
    * @since 2.0.0
-   * @classdesc The Jasmine environment
-   * @constructor
+   * @classdesc The Jasmine environment.<br>
+   * _Note:_ Do not construct this directly. You can obtain the Env instance by
+   * calling {@link jasmine.getEnv}.
+   * @hideconstructor
    */
   function Env(options) {
     options = options || {};
 
-    var self = this;
-    var global = options.global || j$.getGlobal();
-    var customPromise;
+    const self = this;
+    const global = options.global || j$.getGlobal();
 
-    var totalSpecsDefined = 0;
-
-    var realSetTimeout = global.setTimeout;
-    var realClearTimeout = global.clearTimeout;
-    var clearStack = j$.getClearStack(global);
+    const realSetTimeout = global.setTimeout;
+    const realClearTimeout = global.clearTimeout;
+    const clearStack = j$.getClearStack(global);
     this.clock = new j$.Clock(
       global,
       function() {
@@ -26,20 +24,37 @@ getJasmineRequireObj().Env = function(j$) {
       new j$.MockDate(global)
     );
 
-    var runnableResources = {};
+    const globalErrors = new j$.GlobalErrors();
+    const installGlobalErrors = (function() {
+      let installed = false;
+      return function() {
+        if (!installed) {
+          globalErrors.install();
+          installed = true;
+        }
+      };
+    })();
 
-    var currentSpec = null;
-    var currentlyExecutingSuites = [];
-    var currentDeclarationSuite = null;
-    var hasFailures = false;
+    const runableResources = new j$.RunableResources({
+      getCurrentRunableId: function() {
+        const r = runner.currentRunable();
+        return r ? r.id : null;
+      },
+      globalErrors
+    });
+
+    let reporter;
+    let topSuite;
+    let runner;
 
     /**
      * This represents the available options to configure Jasmine.
-     * Options that are not provided will use their default values
+     * Options that are not provided will use their default values.
+     * @see Env#configure
      * @interface Configuration
      * @since 3.3.0
      */
-    var config = {
+    const config = {
       /**
        * Whether to randomize spec execution order
        * @name Configuration#random
@@ -53,18 +68,18 @@ getJasmineRequireObj().Env = function(j$) {
        * Null causes the seed to be determined randomly at the start of execution.
        * @name Configuration#seed
        * @since 3.3.0
-       * @type function
+       * @type (number|string)
        * @default null
        */
       seed: null,
       /**
        * Whether to stop execution of the suite after the first spec failure
-       * @name Configuration#failFast
-       * @since 3.3.0
+       * @name Configuration#stopOnSpecFailure
+       * @since 3.9.0
        * @type Boolean
        * @default false
        */
-      failFast: false,
+      stopOnSpecFailure: false,
       /**
        * Whether to fail the spec if it ran no expectations. By default
        * a spec that ran no expectations is reported as passed. Setting this
@@ -77,18 +92,25 @@ getJasmineRequireObj().Env = function(j$) {
       failSpecWithNoExpectations: false,
       /**
        * Whether to cause specs to only have one expectation failure.
-       * @name Configuration#oneFailurePerSpec
+       * @name Configuration#stopSpecOnExpectationFailure
        * @since 3.3.0
        * @type Boolean
        * @default false
        */
-      oneFailurePerSpec: false,
+      stopSpecOnExpectationFailure: false,
+      /**
+       * A function that takes a spec and returns true if it should be executed
+       * or false if it should be skipped.
+       * @callback SpecFilter
+       * @param {Spec} spec - The spec that the filter is being applied to.
+       * @return boolean
+       */
       /**
        * Function to use to filter specs
        * @name Configuration#specFilter
        * @since 3.3.0
-       * @type function
-       * @default true
+       * @type SpecFilter
+       * @default A function that always returns true.
        */
       specFilter: function() {
         return true;
@@ -103,39 +125,31 @@ getJasmineRequireObj().Env = function(j$) {
        */
       hideDisabled: false,
       /**
-       * Set to provide a custom promise library that Jasmine will use if it needs
-       * to create a promise. If not set, it will default to whatever global Promise
-       * library is available (if any).
-       * @name Configuration#Promise
-       * @since 3.5.0
-       * @type function
-       * @default undefined
+       * Clean closures when a suite is done running (done by clearing the stored function reference).
+       * This prevents memory leaks, but you won't be able to run jasmine multiple times.
+       * @name Configuration#autoCleanClosures
+       * @since 3.10.0
+       * @type boolean
+       * @default true
        */
-      Promise: undefined
-    };
-
-    var currentSuite = function() {
-      return currentlyExecutingSuites[currentlyExecutingSuites.length - 1];
-    };
-
-    var currentRunnable = function() {
-      return currentSpec || currentSuite();
-    };
-
-    var globalErrors = null;
-
-    var installGlobalErrors = function() {
-      if (globalErrors) {
-        return;
-      }
-
-      globalErrors = new j$.GlobalErrors();
-      globalErrors.install();
+      autoCleanClosures: true,
+      /**
+       * Whether or not to issue warnings for certain deprecated functionality
+       * every time it's used. If not set or set to false, deprecation warnings
+       * for methods that tend to be called frequently will be issued only once
+       * or otherwise throttled to to prevent the suite output from being flooded
+       * with warnings.
+       * @name Configuration#verboseDeprecations
+       * @since 3.6.0
+       * @type Boolean
+       * @default false
+       */
+      verboseDeprecations: false
     };
 
     if (!options.suppressLoadErrors) {
       installGlobalErrors();
-      globalErrors.pushListener(function(
+      globalErrors.pushListener(function loadtimeErrorHandler(
         message,
         filename,
         lineno,
@@ -161,49 +175,32 @@ getJasmineRequireObj().Env = function(j$) {
      * @function
      */
     this.configure = function(configuration) {
+      const booleanProps = [
+        'random',
+        'failSpecWithNoExpectations',
+        'hideDisabled',
+        'stopOnSpecFailure',
+        'stopSpecOnExpectationFailure',
+        'autoCleanClosures'
+      ];
+
+      booleanProps.forEach(function(prop) {
+        if (typeof configuration[prop] !== 'undefined') {
+          config[prop] = !!configuration[prop];
+        }
+      });
+
       if (configuration.specFilter) {
         config.specFilter = configuration.specFilter;
       }
 
-      if (configuration.hasOwnProperty('random')) {
-        config.random = !!configuration.random;
-      }
-
-      if (configuration.hasOwnProperty('seed')) {
+      if (typeof configuration.seed !== 'undefined') {
         config.seed = configuration.seed;
       }
 
-      if (configuration.hasOwnProperty('failFast')) {
-        config.failFast = configuration.failFast;
-      }
-
-      if (configuration.hasOwnProperty('failSpecWithNoExpectations')) {
-        config.failSpecWithNoExpectations =
-          configuration.failSpecWithNoExpectations;
-      }
-
-      if (configuration.hasOwnProperty('oneFailurePerSpec')) {
-        config.oneFailurePerSpec = configuration.oneFailurePerSpec;
-      }
-
-      if (configuration.hasOwnProperty('hideDisabled')) {
-        config.hideDisabled = configuration.hideDisabled;
-      }
-
-      // Don't use hasOwnProperty to check for Promise existence because Promise
-      // can be initialized to undefined, either explicitly or by using the
-      // object returned from Env#configuration. In particular, Karma does this.
-      if (configuration.Promise) {
-        if (
-          typeof configuration.Promise.resolve === 'function' &&
-          typeof configuration.Promise.reject === 'function'
-        ) {
-          customPromise = configuration.Promise;
-        } else {
-          throw new Error(
-            'Custom promise library missing `resolve`/`reject` functions'
-          );
-        }
+      if (configuration.hasOwnProperty('verboseDeprecations')) {
+        config.verboseDeprecations = configuration.verboseDeprecations;
+        deprecator.verboseDeprecations(config.verboseDeprecations);
       }
     };
 
@@ -215,103 +212,44 @@ getJasmineRequireObj().Env = function(j$) {
      * @returns {Configuration}
      */
     this.configuration = function() {
-      var result = {};
-      for (var property in config) {
+      const result = {};
+      for (const property in config) {
         result[property] = config[property];
       }
       return result;
     };
 
-    Object.defineProperty(this, 'specFilter', {
-      get: function() {
-        self.deprecated(
-          'Getting specFilter directly from Env is deprecated and will be removed in a future version of Jasmine, please check the specFilter option from `configuration`'
-        );
-        return config.specFilter;
-      },
-      set: function(val) {
-        self.deprecated(
-          'Setting specFilter directly on Env is deprecated and will be removed in a future version of Jasmine, please use the specFilter option in `configure`'
-        );
-        config.specFilter = val;
-      }
-    });
-
     this.setDefaultSpyStrategy = function(defaultStrategyFn) {
-      if (!currentRunnable()) {
-        throw new Error(
-          'Default spy strategy must be set in a before function or a spec'
-        );
-      }
-      runnableResources[
-        currentRunnable().id
-      ].defaultStrategyFn = defaultStrategyFn;
+      runableResources.setDefaultSpyStrategy(defaultStrategyFn);
     };
 
     this.addSpyStrategy = function(name, fn) {
-      if (!currentRunnable()) {
-        throw new Error(
-          'Custom spy strategies must be added in a before function or a spec'
-        );
-      }
-      runnableResources[currentRunnable().id].customSpyStrategies[name] = fn;
+      runableResources.customSpyStrategies()[name] = fn;
     };
 
     this.addCustomEqualityTester = function(tester) {
-      if (!currentRunnable()) {
-        throw new Error(
-          'Custom Equalities must be added in a before function or a spec'
-        );
-      }
-      runnableResources[currentRunnable().id].customEqualityTesters.push(
-        tester
-      );
+      runableResources.customEqualityTesters().push(tester);
     };
 
     this.addMatchers = function(matchersToAdd) {
-      if (!currentRunnable()) {
-        throw new Error(
-          'Matchers must be added in a before function or a spec'
-        );
-      }
-      var customMatchers =
-        runnableResources[currentRunnable().id].customMatchers;
-      for (var matcherName in matchersToAdd) {
-        customMatchers[matcherName] = matchersToAdd[matcherName];
-      }
+      runableResources.addCustomMatchers(matchersToAdd);
     };
 
     this.addAsyncMatchers = function(matchersToAdd) {
-      if (!currentRunnable()) {
-        throw new Error(
-          'Async Matchers must be added in a before function or a spec'
-        );
-      }
-      var customAsyncMatchers =
-        runnableResources[currentRunnable().id].customAsyncMatchers;
-      for (var matcherName in matchersToAdd) {
-        customAsyncMatchers[matcherName] = matchersToAdd[matcherName];
-      }
+      runableResources.addCustomAsyncMatchers(matchersToAdd);
+    };
+
+    this.addCustomObjectFormatter = function(formatter) {
+      runableResources.customObjectFormatters().push(formatter);
     };
 
     j$.Expectation.addCoreMatchers(j$.matchers);
     j$.Expectation.addAsyncCoreMatchers(j$.asyncMatchers);
 
-    var nextSpecId = 0;
-    var getNextSpecId = function() {
-      return 'spec' + nextSpecId++;
-    };
-
-    var nextSuiteId = 0;
-    var getNextSuiteId = function() {
-      return 'suite' + nextSuiteId++;
-    };
-
-    var expectationFactory = function(actual, spec) {
+    const expectationFactory = function(actual, spec) {
       return j$.Expectation.factory({
-        util: j$.matchersUtil,
-        customEqualityTesters: runnableResources[spec.id].customEqualityTesters,
-        customMatchers: runnableResources[spec.id].customMatchers,
+        matchersUtil: runableResources.makeMatchersUtil(),
+        customMatchers: runableResources.customMatchers(),
         actual: actual,
         addExpectationResult: addExpectationResult
       });
@@ -321,213 +259,115 @@ getJasmineRequireObj().Env = function(j$) {
       }
     };
 
-    var asyncExpectationFactory = function(actual, spec) {
-      return j$.Expectation.asyncFactory({
-        util: j$.matchersUtil,
-        customEqualityTesters: runnableResources[spec.id].customEqualityTesters,
-        customAsyncMatchers: runnableResources[spec.id].customAsyncMatchers,
-        actual: actual,
-        addExpectationResult: addExpectationResult
+    // TODO: Unify recordLateError with recordLateExpectation? The extra
+    // diagnostic info added by the latter is probably useful in most cases.
+    function recordLateError(error) {
+      const isExpectationResult =
+        error.matcherName !== undefined && error.passed !== undefined;
+      const result = isExpectationResult
+        ? error
+        : j$.buildExpectationResult({
+            error,
+            passed: false,
+            matcherName: '',
+            expected: '',
+            actual: ''
+          });
+      routeLateFailure(result);
+    }
+
+    function recordLateExpectation(runable, runableType, result) {
+      const delayedExpectationResult = {};
+      Object.keys(result).forEach(function(k) {
+        delayedExpectationResult[k] = result[k];
       });
+      delayedExpectationResult.passed = false;
+      delayedExpectationResult.globalErrorType = 'lateExpectation';
+      delayedExpectationResult.message =
+        runableType +
+        ' "' +
+        runable.getFullName() +
+        '" ran a "' +
+        result.matcherName +
+        '" expectation after it finished.\n';
 
-      function addExpectationResult(passed, result) {
-        return spec.addExpectationResult(passed, result);
-      }
-    };
-
-    var defaultResourcesForRunnable = function(id, parentRunnableId) {
-      var resources = {
-        spies: [],
-        customEqualityTesters: [],
-        customMatchers: {},
-        customAsyncMatchers: {},
-        customSpyStrategies: {},
-        defaultStrategyFn: undefined
-      };
-
-      if (runnableResources[parentRunnableId]) {
-        resources.customEqualityTesters = j$.util.clone(
-          runnableResources[parentRunnableId].customEqualityTesters
-        );
-        resources.customMatchers = j$.util.clone(
-          runnableResources[parentRunnableId].customMatchers
-        );
-        resources.customAsyncMatchers = j$.util.clone(
-          runnableResources[parentRunnableId].customAsyncMatchers
-        );
-        resources.defaultStrategyFn =
-          runnableResources[parentRunnableId].defaultStrategyFn;
+      if (result.message) {
+        delayedExpectationResult.message +=
+          'Message: "' + result.message + '"\n';
       }
 
-      runnableResources[id] = resources;
-    };
+      delayedExpectationResult.message +=
+        '1. Did you forget to return or await the result of expectAsync?\n' +
+        '2. Was done() invoked before an async operation completed?\n' +
+        '3. Did an expectation follow a call to done()?';
 
-    var clearResourcesForRunnable = function(id) {
-      spyRegistry.clearSpies();
-      delete runnableResources[id];
-    };
+      topSuite.result.failedExpectations.push(delayedExpectationResult);
+    }
 
-    var beforeAndAfterFns = function(suite) {
-      return function() {
-        var befores = [],
-          afters = [];
+    function routeLateFailure(expectationResult) {
+      // Report the result on the nearest ancestor suite that hasn't already
+      // been reported done.
+      for (let r = runner.currentRunable(); r; r = r.parentSuite) {
+        if (!r.reportedDone) {
+          if (r === topSuite) {
+            expectationResult.globalErrorType = 'lateError';
+          }
 
-        while (suite) {
-          befores = befores.concat(suite.beforeFns);
-          afters = afters.concat(suite.afterFns);
-
-          suite = suite.parentSuite;
+          r.result.failedExpectations.push(expectationResult);
+          return;
         }
-
-        return {
-          befores: befores.reverse(),
-          afters: afters
-        };
-      };
-    };
-
-    var getSpecName = function(spec, suite) {
-      var fullName = [spec.description],
-        suiteFullName = suite.getFullName();
-
-      if (suiteFullName !== '') {
-        fullName.unshift(suiteFullName);
       }
-      return fullName.join(' ');
-    };
 
-    // TODO: we may just be able to pass in the fn instead of wrapping here
-    var buildExpectationResult = j$.buildExpectationResult,
-      exceptionFormatter = new j$.ExceptionFormatter(),
-      expectationResultFactory = function(attrs) {
-        attrs.messageFormatter = exceptionFormatter.message;
-        attrs.stackFormatter = exceptionFormatter.stack;
+      // If we get here, all results have been reported and there's nothing we
+      // can do except log the result and hope the user sees it.
+      console.error('Jasmine received a result after the suite finished:');
+      console.error(expectationResult);
+    }
 
-        return buildExpectationResult(attrs);
-      };
+    const asyncExpectationFactory = function(actual, spec, runableType) {
+      return j$.Expectation.asyncFactory({
+        matchersUtil: runableResources.makeMatchersUtil(),
+        customAsyncMatchers: runableResources.customAsyncMatchers(),
+        actual: actual,
+        addExpectationResult: addExpectationResult
+      });
 
-    /**
-     * Sets whether Jasmine should throw an Error when an expectation fails.
-     * This causes a spec to only have one expectation failure.
-     * @name Env#throwOnExpectationFailure
-     * @since 2.3.0
-     * @function
-     * @param {Boolean} value Whether to throw when a expectation fails
-     * @deprecated Use the `oneFailurePerSpec` option with {@link Env#configure}
-     */
-    this.throwOnExpectationFailure = function(value) {
-      this.deprecated(
-        'Setting throwOnExpectationFailure directly on Env is deprecated and will be removed in a future version of Jasmine, please use the oneFailurePerSpec option in `configure`'
-      );
-      this.configure({ oneFailurePerSpec: !!value });
-    };
-
-    this.throwingExpectationFailures = function() {
-      this.deprecated(
-        'Getting throwingExpectationFailures directly from Env is deprecated and will be removed in a future version of Jasmine, please check the oneFailurePerSpec option from `configuration`'
-      );
-      return config.oneFailurePerSpec;
-    };
-
-    /**
-     * Set whether to stop suite execution when a spec fails
-     * @name Env#stopOnSpecFailure
-     * @since 2.7.0
-     * @function
-     * @param {Boolean} value Whether to stop suite execution when a spec fails
-     * @deprecated Use the `failFast` option with {@link Env#configure}
-     */
-    this.stopOnSpecFailure = function(value) {
-      this.deprecated(
-        'Setting stopOnSpecFailure directly is deprecated and will be removed in a future version of Jasmine, please use the failFast option in `configure`'
-      );
-      this.configure({ failFast: !!value });
-    };
-
-    this.stoppingOnSpecFailure = function() {
-      this.deprecated(
-        'Getting stoppingOnSpecFailure directly from Env is deprecated and will be removed in a future version of Jasmine, please check the failFast option from `configuration`'
-      );
-      return config.failFast;
-    };
-
-    /**
-     * Set whether to randomize test execution order
-     * @name Env#randomizeTests
-     * @since 2.4.0
-     * @function
-     * @param {Boolean} value Whether to randomize execution order
-     * @deprecated Use the `random` option with {@link Env#configure}
-     */
-    this.randomizeTests = function(value) {
-      this.deprecated(
-        'Setting randomizeTests directly is deprecated and will be removed in a future version of Jasmine, please use the random option in `configure`'
-      );
-      config.random = !!value;
-    };
-
-    this.randomTests = function() {
-      this.deprecated(
-        'Getting randomTests directly from Env is deprecated and will be removed in a future version of Jasmine, please check the random option from `configuration`'
-      );
-      return config.random;
-    };
-
-    /**
-     * Set the random number seed for spec randomization
-     * @name Env#seed
-     * @since 2.4.0
-     * @function
-     * @param {Number} value The seed value
-     * @deprecated Use the `seed` option with {@link Env#configure}
-     */
-    this.seed = function(value) {
-      this.deprecated(
-        'Setting seed directly is deprecated and will be removed in a future version of Jasmine, please use the seed option in `configure`'
-      );
-      if (value) {
-        config.seed = value;
-      }
-      return config.seed;
-    };
-
-    this.hidingDisabled = function(value) {
-      this.deprecated(
-        'Getting hidingDisabled directly from Env is deprecated and will be removed in a future version of Jasmine, please check the hideDisabled option from `configuration`'
-      );
-      return config.hideDisabled;
-    };
-
-    /**
-     * @name Env#hideDisabled
-     * @since 3.2.0
-     * @function
-     */
-    this.hideDisabled = function(value) {
-      this.deprecated(
-        'Setting hideDisabled directly is deprecated and will be removed in a future version of Jasmine, please use the hideDisabled option in `configure`'
-      );
-      config.hideDisabled = !!value;
-    };
-
-    this.deprecated = function(deprecation) {
-      var runnable = currentRunnable() || topSuite;
-      runnable.addDeprecationWarning(deprecation);
-      if (
-        typeof console !== 'undefined' &&
-        typeof console.error === 'function'
-      ) {
-        console.error('DEPRECATION:', deprecation);
+      function addExpectationResult(passed, result) {
+        if (runner.currentRunable() !== spec) {
+          recordLateExpectation(spec, runableType, result);
+        }
+        return spec.addExpectationResult(passed, result);
       }
     };
 
-    var queueRunnerFactory = function(options, args) {
-      var failFast = false;
-      if (options.isLeaf) {
-        failFast = config.oneFailurePerSpec;
-      } else if (!options.isReporter) {
-        failFast = config.failFast;
-      }
+    /**
+     * Causes a deprecation warning to be logged to the console and reported to
+     * reporters.
+     *
+     * The optional second parameter is an object that can have either of the
+     * following properties:
+     *
+     * omitStackTrace: Whether to omit the stack trace. Optional. Defaults to
+     * false. This option is ignored if the deprecation is an Error. Set this
+     * when the stack trace will not contain anything that helps the user find
+     * the source of the deprecation.
+     *
+     * ignoreRunnable: Whether to log the deprecation on the root suite, ignoring
+     * the spec or suite that's running when it happens. Optional. Defaults to
+     * false.
+     *
+     * @name Env#deprecated
+     * @since 2.99
+     * @function
+     * @param {String|Error} deprecation The deprecation message
+     * @param {Object} [options] Optional extra options, as described above
+     */
+    this.deprecated = function(deprecation, options) {
+      const runable = runner.currentRunable() || topSuite;
+      deprecator.addDeprecationWarning(runable, deprecation, options);
+    };
+
+    function queueRunnerFactory(options) {
       options.clearStack = options.clearStack || clearStack;
       options.timeout = {
         setTimeout: realSetTimeout,
@@ -535,30 +375,38 @@ getJasmineRequireObj().Env = function(j$) {
       };
       options.fail = self.fail;
       options.globalErrors = globalErrors;
-      options.completeOnFirstError = failFast;
       options.onException =
         options.onException ||
         function(e) {
-          (currentRunnable() || topSuite).onException(e);
+          (runner.currentRunable() || topSuite).handleException(e);
         };
       options.deprecated = self.deprecated;
 
-      new j$.QueueRunner(options).execute(args);
-    };
+      new j$.QueueRunner(options).execute();
+    }
 
-    var topSuite = new j$.Suite({
+    const suiteBuilder = new j$.SuiteBuilder({
       env: this,
-      id: getNextSuiteId(),
-      description: 'Jasmine__TopLevel__Suite',
-      expectationFactory: expectationFactory,
-      asyncExpectationFactory: asyncExpectationFactory,
-      expectationResultFactory: expectationResultFactory
+      expectationFactory,
+      asyncExpectationFactory,
+      onLateError: recordLateError,
+      specResultCallback,
+      specStarted,
+      queueRunnerFactory
     });
-    defaultResourcesForRunnable(topSuite.id);
-    currentDeclarationSuite = topSuite;
+    topSuite = suiteBuilder.topSuite;
+    const deprecator = new j$.Deprecator(topSuite);
 
+    /**
+     * Provides the root suite, through which all suites and specs can be
+     * accessed.
+     * @function
+     * @name Env#topSuite
+     * @return {Suite} the root suite
+     * @since 2.0.0
+     */
     this.topSuite = function() {
-      return topSuite;
+      return topSuite.metadata;
     };
 
     /**
@@ -566,7 +414,7 @@ getJasmineRequireObj().Env = function(j$) {
      * @interface Reporter
      * @see custom_reporter
      */
-    var reporter = new j$.ReportDispatcher(
+    reporter = new j$.ReportDispatcher(
       [
         /**
          * `jasmineStarted` is called after all of the specs have been loaded, but just before execution starts.
@@ -633,122 +481,65 @@ getJasmineRequireObj().Env = function(j$) {
          */
         'specDone'
       ],
-      queueRunnerFactory
+      function(options) {
+        options.SkipPolicy = j$.NeverSkipPolicy;
+        return queueRunnerFactory(options);
+      },
+      recordLateError
     );
 
-    this.execute = function(runnablesToRun) {
+    runner = new j$.Runner({
+      topSuite,
+      totalSpecsDefined: () => suiteBuilder.totalSpecsDefined,
+      focusedRunables: () => suiteBuilder.focusedRunables,
+      runableResources,
+      reporter,
+      queueRunnerFactory,
+      getConfig: () => config,
+      reportSpecDone
+    });
+
+    /**
+     * Executes the specs.
+     *
+     * If called with no parameters or with a falsy value as the first parameter,
+     * all specs will be executed except those that are excluded by a
+     * [spec filter]{@link Configuration#specFilter} or other mechanism. If the
+     * first parameter is a list of spec/suite IDs, only those specs/suites will
+     * be run.
+     *
+     * Both parameters are optional, but a completion callback is only valid as
+     * the second parameter. To specify a completion callback but not a list of
+     * specs/suites to run, pass null or undefined as the first parameter. The
+     * completion callback is supported for backward compatibility. In most
+     * cases it will be more convenient to use the returned promise instead.
+     *
+     * execute should not be called more than once unless the env has been
+     * configured with `{autoCleanClosures: false}`.
+     *
+     * execute returns a promise. The promise will be resolved to the same
+     * {@link JasmineDoneInfo|overall result} that's passed to a reporter's
+     * `jasmineDone` method, even if the suite did not pass. To determine
+     * whether the suite passed, check the value that the promise resolves to
+     * or use a {@link Reporter}.
+     *
+     * @name Env#execute
+     * @since 2.0.0
+     * @function
+     * @param {(string[])=} runablesToRun IDs of suites and/or specs to run
+     * @param {Function=} onComplete Function that will be called after all specs have run
+     * @return {Promise<JasmineDoneInfo>}
+     */
+    this.execute = function(runablesToRun, onComplete) {
       installGlobalErrors();
 
-      if (!runnablesToRun) {
-        if (focusedRunnables.length) {
-          runnablesToRun = focusedRunnables;
-        } else {
-          runnablesToRun = [topSuite.id];
+      return runner.execute(runablesToRun).then(function(jasmineDoneInfo) {
+        if (onComplete) {
+          onComplete();
         }
-      }
 
-      var order = new j$.Order({
-        random: config.random,
-        seed: config.seed
+        return jasmineDoneInfo;
       });
-
-      var processor = new j$.TreeProcessor({
-        tree: topSuite,
-        runnableIds: runnablesToRun,
-        queueRunnerFactory: queueRunnerFactory,
-        failSpecWithNoExpectations: config.failSpecWithNoExpectations,
-        nodeStart: function(suite, next) {
-          currentlyExecutingSuites.push(suite);
-          defaultResourcesForRunnable(suite.id, suite.parentSuite.id);
-          reporter.suiteStarted(suite.result, next);
-          suite.startTimer();
-        },
-        nodeComplete: function(suite, result, next) {
-          if (suite !== currentSuite()) {
-            throw new Error('Tried to complete the wrong suite');
-          }
-
-          clearResourcesForRunnable(suite.id);
-          currentlyExecutingSuites.pop();
-
-          if (result.status === 'failed') {
-            hasFailures = true;
-          }
-          suite.endTimer();
-          reporter.suiteDone(result, next);
-        },
-        orderChildren: function(node) {
-          return order.sort(node.children);
-        },
-        excludeNode: function(spec) {
-          return !config.specFilter(spec);
-        }
-      });
-
-      if (!processor.processTree().valid) {
-        throw new Error(
-          'Invalid order: would cause a beforeAll or afterAll to be run multiple times'
-        );
-      }
-
-      var jasmineTimer = new j$.Timer();
-      jasmineTimer.start();
-
-      /**
-       * Information passed to the {@link Reporter#jasmineStarted} event.
-       * @typedef JasmineStartedInfo
-       * @property {Int} totalSpecsDefined - The total number of specs defined in this suite.
-       * @property {Order} order - Information about the ordering (random or not) of this execution of the suite.
-       */
-      reporter.jasmineStarted(
-        {
-          totalSpecsDefined: totalSpecsDefined,
-          order: order
-        },
-        function() {
-          currentlyExecutingSuites.push(topSuite);
-
-          processor.execute(function() {
-            clearResourcesForRunnable(topSuite.id);
-            currentlyExecutingSuites.pop();
-            var overallStatus, incompleteReason;
-
-            if (hasFailures || topSuite.result.failedExpectations.length > 0) {
-              overallStatus = 'failed';
-            } else if (focusedRunnables.length > 0) {
-              overallStatus = 'incomplete';
-              incompleteReason = 'fit() or fdescribe() was found';
-            } else if (totalSpecsDefined === 0) {
-              overallStatus = 'incomplete';
-              incompleteReason = 'No specs found';
-            } else {
-              overallStatus = 'passed';
-            }
-
-            /**
-             * Information passed to the {@link Reporter#jasmineDone} event.
-             * @typedef JasmineDoneInfo
-             * @property {OverallStatus} overallStatus - The overall result of the suite: 'passed', 'failed', or 'incomplete'.
-             * @property {Int} totalTime - The total time (in ms) that it took to execute the suite
-             * @property {IncompleteReason} incompleteReason - Explanation of why the suite was incomplete.
-             * @property {Order} order - Information about the ordering (random or not) of this execution of the suite.
-             * @property {Expectation[]} failedExpectations - List of expectations that failed in an {@link afterAll} at the global level.
-             * @property {Expectation[]} deprecationWarnings - List of deprecation warnings that occurred at the global level.
-             */
-            reporter.jasmineDone(
-              {
-                overallStatus: overallStatus,
-                totalTime: jasmineTimer.elapsed(),
-                incompleteReason: incompleteReason,
-                order: order,
-                failedExpectations: topSuite.result.failedExpectations,
-                deprecationWarnings: topSuite.result.deprecationWarnings
-              },
-              function() {}
-            );
-          });
-        }
-      );
     };
 
     /**
@@ -785,334 +576,243 @@ getJasmineRequireObj().Env = function(j$) {
       reporter.clearReporters();
     };
 
-    var spyFactory = new j$.SpyFactory(
-      function getCustomStrategies() {
-        var runnable = currentRunnable();
-
-        if (runnable) {
-          return runnableResources[runnable.id].customSpyStrategies;
-        }
-
-        return {};
-      },
-      function getDefaultStrategyFn() {
-        var runnable = currentRunnable();
-
-        if (runnable) {
-          return runnableResources[runnable.id].defaultStrategyFn;
-        }
-
-        return undefined;
-      },
-      function getPromise() {
-        return customPromise || global.Promise;
-      }
-    );
-
-    var spyRegistry = new j$.SpyRegistry({
-      currentSpies: function() {
-        if (!currentRunnable()) {
-          throw new Error(
-            'Spies must be created in a before function or a spec'
-          );
-        }
-        return runnableResources[currentRunnable().id].spies;
-      },
-      createSpy: function(name, originalFn) {
-        return self.createSpy(name, originalFn);
-      }
-    });
-
+    /**
+     * Configures whether Jasmine should allow the same function to be spied on
+     * more than once during the execution of a spec. By default, spying on
+     * a function that is already a spy will cause an error.
+     * @name Env#allowRespy
+     * @function
+     * @since 2.5.0
+     * @param {boolean} allow Whether to allow respying
+     */
     this.allowRespy = function(allow) {
-      spyRegistry.allowRespy(allow);
+      runableResources.spyRegistry.allowRespy(allow);
     };
 
     this.spyOn = function() {
-      return spyRegistry.spyOn.apply(spyRegistry, arguments);
+      return runableResources.spyRegistry.spyOn.apply(
+        runableResources.spyRegistry,
+        arguments
+      );
     };
 
     this.spyOnProperty = function() {
-      return spyRegistry.spyOnProperty.apply(spyRegistry, arguments);
+      return runableResources.spyRegistry.spyOnProperty.apply(
+        runableResources.spyRegistry,
+        arguments
+      );
     };
 
     this.spyOnAllFunctions = function() {
-      return spyRegistry.spyOnAllFunctions.apply(spyRegistry, arguments);
+      return runableResources.spyRegistry.spyOnAllFunctions.apply(
+        runableResources.spyRegistry,
+        arguments
+      );
     };
 
     this.createSpy = function(name, originalFn) {
-      if (arguments.length === 1 && j$.isFunction_(name)) {
-        originalFn = name;
-        name = originalFn.name;
-      }
-
-      return spyFactory.createSpy(name, originalFn);
+      return runableResources.spyFactory.createSpy(name, originalFn);
     };
 
     this.createSpyObj = function(baseName, methodNames, propertyNames) {
-      return spyFactory.createSpyObj(baseName, methodNames, propertyNames);
+      return runableResources.spyFactory.createSpyObj(
+        baseName,
+        methodNames,
+        propertyNames
+      );
     };
 
-    var ensureIsFunction = function(fn, caller) {
-      if (!j$.isFunction_(fn)) {
-        throw new Error(
-          caller + ' expects a function argument; received ' + j$.getType_(fn)
-        );
-      }
-    };
+    this.spyOnGlobalErrorsAsync = async function(fn) {
+      const spy = this.createSpy('global error handler');
+      const associatedRunable = runner.currentRunable();
+      let cleanedUp = false;
 
-    var ensureIsFunctionOrAsync = function(fn, caller) {
-      if (!j$.isFunction_(fn) && !j$.isAsyncFunction_(fn)) {
-        throw new Error(
-          caller + ' expects a function argument; received ' + j$.getType_(fn)
-        );
+      globalErrors.setOverrideListener(spy, () => {
+        if (!cleanedUp) {
+          const message =
+            'Global error spy was not uninstalled. (Did you ' +
+            'forget to await the return value of spyOnGlobalErrorsAsync?)';
+          associatedRunable.addExpectationResult(false, {
+            matcherName: '',
+            passed: false,
+            expected: '',
+            actual: '',
+            message,
+            error: null
+          });
+        }
+
+        cleanedUp = true;
+      });
+
+      try {
+        const maybePromise = fn(spy);
+
+        if (!j$.isPromiseLike(maybePromise)) {
+          throw new Error(
+            'The callback to spyOnGlobalErrorsAsync must be an async or promise-returning function'
+          );
+        }
+
+        await maybePromise;
+      } finally {
+        if (!cleanedUp) {
+          cleanedUp = true;
+          globalErrors.removeOverrideListener();
+        }
       }
     };
 
     function ensureIsNotNested(method) {
-      var runnable = currentRunnable();
-      if (runnable !== null && runnable !== undefined) {
+      const runable = runner.currentRunable();
+      if (runable !== null && runable !== undefined) {
         throw new Error(
           "'" + method + "' should only be used in 'describe' function"
         );
       }
     }
 
-    var suiteFactory = function(description) {
-      var suite = new j$.Suite({
-        env: self,
-        id: getNextSuiteId(),
-        description: description,
-        parentSuite: currentDeclarationSuite,
-        expectationFactory: expectationFactory,
-        asyncExpectationFactory: asyncExpectationFactory,
-        expectationResultFactory: expectationResultFactory,
-        throwOnExpectationFailure: config.oneFailurePerSpec
-      });
-
-      return suite;
-    };
-
-    this.describe = function(description, specDefinitions) {
+    this.describe = function(description, definitionFn) {
       ensureIsNotNested('describe');
-      ensureIsFunction(specDefinitions, 'describe');
-      var suite = suiteFactory(description);
-      if (specDefinitions.length > 0) {
-        throw new Error('describe does not expect any arguments');
-      }
-      if (currentDeclarationSuite.markedPending) {
-        suite.pend();
-      }
-      addSpecsToSuite(suite, specDefinitions);
-      return suite;
+      return suiteBuilder.describe(description, definitionFn).metadata;
     };
 
-    this.xdescribe = function(description, specDefinitions) {
+    this.xdescribe = function(description, definitionFn) {
       ensureIsNotNested('xdescribe');
-      ensureIsFunction(specDefinitions, 'xdescribe');
-      var suite = suiteFactory(description);
-      suite.pend();
-      addSpecsToSuite(suite, specDefinitions);
-      return suite;
+      return suiteBuilder.xdescribe(description, definitionFn).metadata;
     };
 
-    var focusedRunnables = [];
-
-    this.fdescribe = function(description, specDefinitions) {
+    this.fdescribe = function(description, definitionFn) {
       ensureIsNotNested('fdescribe');
-      ensureIsFunction(specDefinitions, 'fdescribe');
-      var suite = suiteFactory(description);
-      suite.isFocused = true;
-
-      focusedRunnables.push(suite.id);
-      unfocusAncestor();
-      addSpecsToSuite(suite, specDefinitions);
-
-      return suite;
+      return suiteBuilder.fdescribe(description, definitionFn).metadata;
     };
 
-    function addSpecsToSuite(suite, specDefinitions) {
-      var parentSuite = currentDeclarationSuite;
-      parentSuite.addChild(suite);
-      currentDeclarationSuite = suite;
+    function specResultCallback(spec, result, next) {
+      runableResources.clearForRunable(spec.id);
+      runner.currentSpec = null;
 
-      var declarationError = null;
-      try {
-        specDefinitions.call(suite);
-      } catch (e) {
-        declarationError = e;
+      if (result.status === 'failed') {
+        runner.hasFailures = true;
       }
 
-      if (declarationError) {
-        suite.onException(declarationError);
-      }
-
-      currentDeclarationSuite = parentSuite;
+      reportSpecDone(spec, result, next);
     }
 
-    function findFocusedAncestor(suite) {
-      while (suite) {
-        if (suite.isFocused) {
-          return suite.id;
-        }
-        suite = suite.parentSuite;
-      }
-
-      return null;
+    function specStarted(spec, suite, next) {
+      runner.currentSpec = spec;
+      runableResources.initForRunable(spec.id, suite.id);
+      reporter.specStarted(spec.result, next);
     }
 
-    function unfocusAncestor() {
-      var focusedAncestor = findFocusedAncestor(currentDeclarationSuite);
-      if (focusedAncestor) {
-        for (var i = 0; i < focusedRunnables.length; i++) {
-          if (focusedRunnables[i] === focusedAncestor) {
-            focusedRunnables.splice(i, 1);
-            break;
-          }
-        }
-      }
+    function reportSpecDone(spec, result, next) {
+      spec.reportedDone = true;
+      reporter.specDone(result, next);
     }
-
-    var specFactory = function(description, fn, suite, timeout) {
-      totalSpecsDefined++;
-      var spec = new j$.Spec({
-        id: getNextSpecId(),
-        beforeAndAfterFns: beforeAndAfterFns(suite),
-        expectationFactory: expectationFactory,
-        asyncExpectationFactory: asyncExpectationFactory,
-        resultCallback: specResultCallback,
-        getSpecName: function(spec) {
-          return getSpecName(spec, suite);
-        },
-        onStart: specStarted,
-        description: description,
-        expectationResultFactory: expectationResultFactory,
-        queueRunnerFactory: queueRunnerFactory,
-        userContext: function() {
-          return suite.clonedSharedUserContext();
-        },
-        queueableFn: {
-          fn: fn,
-          timeout: timeout || 0
-        },
-        throwOnExpectationFailure: config.oneFailurePerSpec,
-        timer: new j$.Timer()
-      });
-      return spec;
-
-      function specResultCallback(result, next) {
-        clearResourcesForRunnable(spec.id);
-        currentSpec = null;
-
-        if (result.status === 'failed') {
-          hasFailures = true;
-        }
-
-        reporter.specDone(result, next);
-      }
-
-      function specStarted(spec, next) {
-        currentSpec = spec;
-        defaultResourcesForRunnable(spec.id, suite.id);
-        reporter.specStarted(spec.result, next);
-      }
-    };
 
     this.it = function(description, fn, timeout) {
       ensureIsNotNested('it');
-      // it() sometimes doesn't have a fn argument, so only check the type if
-      // it's given.
-      if (arguments.length > 1 && typeof fn !== 'undefined') {
-        ensureIsFunctionOrAsync(fn, 'it');
-      }
-      var spec = specFactory(description, fn, currentDeclarationSuite, timeout);
-      if (currentDeclarationSuite.markedPending) {
-        spec.pend();
-      }
-      currentDeclarationSuite.addChild(spec);
-      return spec;
+      return suiteBuilder.it(description, fn, timeout).metadata;
     };
 
     this.xit = function(description, fn, timeout) {
       ensureIsNotNested('xit');
-      // xit(), like it(), doesn't always have a fn argument, so only check the
-      // type when needed.
-      if (arguments.length > 1 && typeof fn !== 'undefined') {
-        ensureIsFunctionOrAsync(fn, 'xit');
-      }
-      var spec = this.it.apply(this, arguments);
-      spec.pend('Temporarily disabled with xit');
-      return spec;
+      return suiteBuilder.xit(description, fn, timeout).metadata;
     };
 
     this.fit = function(description, fn, timeout) {
       ensureIsNotNested('fit');
-      ensureIsFunctionOrAsync(fn, 'fit');
-      var spec = specFactory(description, fn, currentDeclarationSuite, timeout);
-      currentDeclarationSuite.addChild(spec);
-      focusedRunnables.push(spec.id);
-      unfocusAncestor();
-      return spec;
+      return suiteBuilder.fit(description, fn, timeout).metadata;
+    };
+
+    /**
+     * Sets a user-defined property that will be provided to reporters as part of the properties field of {@link SpecResult}
+     * @name Env#setSpecProperty
+     * @since 3.6.0
+     * @function
+     * @param {String} key The name of the property
+     * @param {*} value The value of the property
+     */
+    this.setSpecProperty = function(key, value) {
+      if (
+        !runner.currentRunable() ||
+        runner.currentRunable() == runner.currentSuite()
+      ) {
+        throw new Error(
+          "'setSpecProperty' was used when there was no current spec"
+        );
+      }
+      runner.currentRunable().setSpecProperty(key, value);
+    };
+
+    /**
+     * Sets a user-defined property that will be provided to reporters as part of the properties field of {@link SuiteResult}
+     * @name Env#setSuiteProperty
+     * @since 3.6.0
+     * @function
+     * @param {String} key The name of the property
+     * @param {*} value The value of the property
+     */
+    this.setSuiteProperty = function(key, value) {
+      if (!runner.currentSuite()) {
+        throw new Error(
+          "'setSuiteProperty' was used when there was no current suite"
+        );
+      }
+      runner.currentSuite().setSuiteProperty(key, value);
+    };
+
+    this.debugLog = function(msg) {
+      const maybeSpec = runner.currentRunable();
+
+      if (!maybeSpec || !maybeSpec.debugLog) {
+        throw new Error("'debugLog' was called when there was no current spec");
+      }
+
+      maybeSpec.debugLog(msg);
     };
 
     this.expect = function(actual) {
-      if (!currentRunnable()) {
+      if (!runner.currentRunable()) {
         throw new Error(
           "'expect' was used when there was no current spec, this could be because an asynchronous test timed out"
         );
       }
 
-      return currentRunnable().expect(actual);
+      return runner.currentRunable().expect(actual);
     };
 
     this.expectAsync = function(actual) {
-      if (!currentRunnable()) {
+      if (!runner.currentRunable()) {
         throw new Error(
           "'expectAsync' was used when there was no current spec, this could be because an asynchronous test timed out"
         );
       }
 
-      return currentRunnable().expectAsync(actual);
+      return runner.currentRunable().expectAsync(actual);
     };
 
     this.beforeEach = function(beforeEachFunction, timeout) {
       ensureIsNotNested('beforeEach');
-      ensureIsFunctionOrAsync(beforeEachFunction, 'beforeEach');
-      currentDeclarationSuite.beforeEach({
-        fn: beforeEachFunction,
-        timeout: timeout || 0
-      });
+      suiteBuilder.beforeEach(beforeEachFunction, timeout);
     };
 
     this.beforeAll = function(beforeAllFunction, timeout) {
       ensureIsNotNested('beforeAll');
-      ensureIsFunctionOrAsync(beforeAllFunction, 'beforeAll');
-      currentDeclarationSuite.beforeAll({
-        fn: beforeAllFunction,
-        timeout: timeout || 0
-      });
+      suiteBuilder.beforeAll(beforeAllFunction, timeout);
     };
 
     this.afterEach = function(afterEachFunction, timeout) {
       ensureIsNotNested('afterEach');
-      ensureIsFunctionOrAsync(afterEachFunction, 'afterEach');
-      afterEachFunction.isCleanup = true;
-      currentDeclarationSuite.afterEach({
-        fn: afterEachFunction,
-        timeout: timeout || 0
-      });
+      suiteBuilder.afterEach(afterEachFunction, timeout);
     };
 
     this.afterAll = function(afterAllFunction, timeout) {
       ensureIsNotNested('afterAll');
-      ensureIsFunctionOrAsync(afterAllFunction, 'afterAll');
-      currentDeclarationSuite.afterAll({
-        fn: afterAllFunction,
-        timeout: timeout || 0
-      });
+      suiteBuilder.afterAll(afterAllFunction, timeout);
     };
 
     this.pending = function(message) {
-      var fullMessage = j$.Spec.pendingSpecExceptionMessage;
+      let fullMessage = j$.Spec.pendingSpecExceptionMessage;
       if (message) {
         fullMessage += message;
       }
@@ -1120,13 +820,13 @@ getJasmineRequireObj().Env = function(j$) {
     };
 
     this.fail = function(error) {
-      if (!currentRunnable()) {
+      if (!runner.currentRunable()) {
         throw new Error(
           "'fail' was used when there was no current spec, this could be because an asynchronous test timed out"
         );
       }
 
-      var message = 'Failed';
+      let message = 'Failed';
       if (error) {
         message += ': ';
         if (error.message) {
@@ -1135,11 +835,12 @@ getJasmineRequireObj().Env = function(j$) {
           message += error;
         } else {
           // pretty print all kind of objects. This includes arrays.
-          message += j$.pp(error);
+          const pp = runableResources.makePrettyPrinter();
+          message += pp(error);
         }
       }
 
-      currentRunnable().addExpectationResult(false, {
+      runner.currentRunable().addExpectationResult(false, {
         matcherName: '',
         passed: false,
         expected: '',
@@ -1148,8 +849,14 @@ getJasmineRequireObj().Env = function(j$) {
         error: error && error.message ? error : null
       });
 
-      if (config.oneFailurePerSpec) {
+      if (config.stopSpecOnExpectationFailure) {
         throw new Error(message);
+      }
+    };
+
+    this.cleanup_ = function() {
+      if (globalErrors) {
+        globalErrors.uninstall();
       }
     };
   }

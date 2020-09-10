@@ -17,24 +17,24 @@ getJasmineRequireObj().Spec = function(j$) {
         return {};
       };
     this.onStart = attrs.onStart || function() {};
+    this.autoCleanClosures =
+      attrs.autoCleanClosures === undefined ? true : !!attrs.autoCleanClosures;
     this.getSpecName =
       attrs.getSpecName ||
       function() {
         return '';
       };
-    this.expectationResultFactory =
-      attrs.expectationResultFactory || function() {};
-    this.queueRunnerFactory = attrs.queueRunnerFactory || function() {};
+    this.onLateError = attrs.onLateError || function() {};
     this.catchingExceptions =
       attrs.catchingExceptions ||
       function() {
         return true;
       };
     this.throwOnExpectationFailure = !!attrs.throwOnExpectationFailure;
-    this.timer = attrs.timer || j$.noopTimer;
+    this.timer = attrs.timer || new j$.Timer();
 
     if (!this.queueableFn.fn) {
-      this.pend();
+      this.exclude();
     }
 
     /**
@@ -48,6 +48,9 @@ getJasmineRequireObj().Spec = function(j$) {
      * @property {String} pendingReason - If the spec is {@link pending}, this will be the reason.
      * @property {String} status - Once the spec has completed, this string represents the pass/fail status of this spec.
      * @property {number} duration - The time in ms used by the spec execution, including any before/afterEach.
+     * @property {Object} properties - User-supplied properties, if any, that were set using {@link Env#setSpecProperty}
+     * @property {DebugLogEntry[]|null} debugLogs - Messages, if any, that were logged using {@link jasmine.debugLog} during a failing spec.
+     * @since 2.0.0
      */
     this.result = {
       id: this.id,
@@ -57,21 +60,40 @@ getJasmineRequireObj().Spec = function(j$) {
       passedExpectations: [],
       deprecationWarnings: [],
       pendingReason: '',
-      duration: null
+      duration: null,
+      properties: null,
+      debugLogs: null
     };
+
+    this.reportedDone = false;
   }
 
   Spec.prototype.addExpectationResult = function(passed, data, isError) {
-    var expectationResult = this.expectationResultFactory(data);
+    const expectationResult = j$.buildExpectationResult(data);
+
     if (passed) {
       this.result.passedExpectations.push(expectationResult);
     } else {
-      this.result.failedExpectations.push(expectationResult);
+      if (this.reportedDone) {
+        this.onLateError(expectationResult);
+      } else {
+        this.result.failedExpectations.push(expectationResult);
+
+        // TODO: refactor so that we don't need to override cached status
+        if (this.result.status) {
+          this.result.status = 'failed';
+        }
+      }
 
       if (this.throwOnExpectationFailure && !isError) {
         throw new j$.errors.ExpectationFailed();
       }
     }
+  };
+
+  Spec.prototype.setSpecProperty = function(key, value) {
+    this.result.properties = this.result.properties || {};
+    this.result.properties[key] = value;
   };
 
   Spec.prototype.expect = function(actual) {
@@ -82,56 +104,94 @@ getJasmineRequireObj().Spec = function(j$) {
     return this.asyncExpectationFactory(actual, this);
   };
 
-  Spec.prototype.execute = function(onComplete, excluded, failSpecWithNoExp) {
-    var self = this;
-
-    var onStart = {
-      fn: function(done) {
-        self.timer.start();
-        self.onStart(self, done);
+  Spec.prototype.execute = function(
+    queueRunnerFactory,
+    onComplete,
+    excluded,
+    failSpecWithNoExp
+  ) {
+    const onStart = {
+      fn: done => {
+        this.timer.start();
+        this.onStart(this, done);
       }
     };
 
-    var complete = {
-      fn: function(done) {
-        self.queueableFn.fn = null;
-        self.result.status = self.status(excluded, failSpecWithNoExp);
-        self.resultCallback(self.result, done);
-      }
-    };
+    const complete = {
+      fn: done => {
+        if (this.autoCleanClosures) {
+          this.queueableFn.fn = null;
+        }
+        this.result.status = this.status(excluded, failSpecWithNoExp);
+        this.result.duration = this.timer.elapsed();
 
-    var fns = this.beforeAndAfterFns();
-    var regularFns = fns.befores.concat(this.queueableFn);
+        if (this.result.status !== 'failed') {
+          this.result.debugLogs = null;
+        }
 
-    var runnerConfig = {
-      isLeaf: true,
-      queueableFns: regularFns,
-      cleanupFns: fns.afters,
-      onException: function() {
-        self.onException.apply(self, arguments);
+        this.resultCallback(this.result, done);
       },
-      onComplete: function() {
-        self.result.duration = self.timer.elapsed();
-        onComplete(
-          self.result.status === 'failed' &&
-            new j$.StopExecutionError('spec failed')
+      type: 'specCleanup'
+    };
+
+    const fns = this.beforeAndAfterFns();
+
+    const runnerConfig = {
+      isLeaf: true,
+      queueableFns: [...fns.befores, this.queueableFn, ...fns.afters],
+      onException: e => this.handleException(e),
+      onMultipleDone: () => {
+        // Issue a deprecation. Include the context ourselves and pass
+        // ignoreRunnable: true, since getting here always means that we've already
+        // moved on and the current runnable isn't the one that caused the problem.
+        this.onLateError(
+          new Error(
+            'An asynchronous spec, beforeEach, or afterEach function called its ' +
+              "'done' callback more than once.\n(in spec: " +
+              this.getFullName() +
+              ')'
+          )
         );
       },
-      userContext: this.userContext()
+      onComplete: () => {
+        if (this.result.status === 'failed') {
+          onComplete(new j$.StopExecutionError('spec failed'));
+        } else {
+          onComplete();
+        }
+      },
+      userContext: this.userContext(),
+      runnableName: this.getFullName.bind(this)
     };
 
     if (this.markedPending || excluded === true) {
       runnerConfig.queueableFns = [];
-      runnerConfig.cleanupFns = [];
     }
 
     runnerConfig.queueableFns.unshift(onStart);
-    runnerConfig.cleanupFns.push(complete);
+    runnerConfig.queueableFns.push(complete);
 
-    this.queueRunnerFactory(runnerConfig);
+    queueRunnerFactory(runnerConfig);
   };
 
-  Spec.prototype.onException = function onException(e) {
+  Spec.prototype.reset = function() {
+    this.result = {
+      id: this.id,
+      description: this.description,
+      fullName: this.getFullName(),
+      failedExpectations: [],
+      passedExpectations: [],
+      deprecationWarnings: [],
+      pendingReason: this.excludeMessage,
+      duration: null,
+      properties: null,
+      debugLogs: null
+    };
+    this.markedPending = this.markedExcluding;
+    this.reportedDone = false;
+  };
+
+  Spec.prototype.handleException = function handleException(e) {
     if (Spec.isPendingSpecException(e)) {
       this.pend(extractCustomPendingMessage(e));
       return;
@@ -154,11 +214,28 @@ getJasmineRequireObj().Spec = function(j$) {
     );
   };
 
+  /*
+   * Marks state as pending
+   * @param {string} [message] An optional reason message
+   */
   Spec.prototype.pend = function(message) {
     this.markedPending = true;
     if (message) {
       this.result.pendingReason = message;
     }
+  };
+
+  /*
+   * Like {@link Spec#pend}, but pending state will survive {@link Spec#reset}
+   * Useful for fit, xit, where pending state remains.
+   * @param {string} [message] An optional reason message
+   */
+  Spec.prototype.exclude = function(message) {
+    this.markedExcluding = true;
+    if (this.message) {
+      this.excludeMessage = message;
+    }
+    this.pend(message);
   };
 
   Spec.prototype.getResult = function() {
@@ -197,17 +274,34 @@ getJasmineRequireObj().Spec = function(j$) {
       deprecation = { message: deprecation };
     }
     this.result.deprecationWarnings.push(
-      this.expectationResultFactory(deprecation)
+      j$.buildExpectationResult(deprecation)
     );
   };
 
-  var extractCustomPendingMessage = function(e) {
-    var fullMessage = e.toString(),
+  Spec.prototype.debugLog = function(msg) {
+    if (!this.result.debugLogs) {
+      this.result.debugLogs = [];
+    }
+
+    /**
+     * @typedef DebugLogEntry
+     * @property {String} message - The message that was passed to {@link jasmine.debugLog}.
+     * @property {number} timestamp - The time when the entry was added, in
+     * milliseconds from the spec's start time
+     */
+    this.result.debugLogs.push({
+      message: msg,
+      timestamp: this.timer.elapsed()
+    });
+  };
+
+  const extractCustomPendingMessage = function(e) {
+    const fullMessage = e.toString(),
       boilerplateStart = fullMessage.indexOf(Spec.pendingSpecExceptionMessage),
       boilerplateEnd =
         boilerplateStart + Spec.pendingSpecExceptionMessage.length;
 
-    return fullMessage.substr(boilerplateEnd);
+    return fullMessage.slice(boilerplateEnd);
   };
 
   Spec.pendingSpecExceptionMessage = '=> marked Pending';
@@ -220,10 +314,47 @@ getJasmineRequireObj().Spec = function(j$) {
     );
   };
 
+  /**
+   * @interface Spec
+   * @see Configuration#specFilter
+   * @since 2.0.0
+   */
+  Object.defineProperty(Spec.prototype, 'metadata', {
+    get: function() {
+      if (!this.metadata_) {
+        this.metadata_ = {
+          /**
+           * The unique ID of this spec.
+           * @name Spec#id
+           * @readonly
+           * @type {string}
+           * @since 2.0.0
+           */
+          id: this.id,
+
+          /**
+           * The description passed to the {@link it} that created this spec.
+           * @name Spec#description
+           * @readonly
+           * @type {string}
+           * @since 2.0.0
+           */
+          description: this.description,
+
+          /**
+           * The full description including all ancestors of this spec.
+           * @name Spec#getFullName
+           * @function
+           * @returns {string}
+           * @since 2.0.0
+           */
+          getFullName: this.getFullName.bind(this)
+        };
+      }
+
+      return this.metadata_;
+    }
+  });
+
   return Spec;
 };
-
-if (typeof window == void 0 && typeof exports == 'object') {
-  /* globals exports */
-  exports.Spec = jasmineRequire.Spec;
-}

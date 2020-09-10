@@ -1,12 +1,16 @@
 describe('Spies', function() {
-  var env;
+  let env;
 
   beforeEach(function() {
     env = new jasmineUnderTest.Env();
   });
 
+  afterEach(function() {
+    env.cleanup_();
+  });
+
   describe('createSpy', function() {
-    var TestClass;
+    let TestClass;
 
     beforeEach(function() {
       TestClass = function() {};
@@ -15,7 +19,7 @@ describe('Spies', function() {
     });
 
     it('preserves the properties of the spied function', function() {
-      var spy = env.createSpy(
+      const spy = env.createSpy(
         TestClass.prototype,
         TestClass.prototype.someFunction
       );
@@ -24,15 +28,10 @@ describe('Spies', function() {
     });
 
     it('should allow you to omit the name argument and only pass the originalFn argument', function() {
-      var fn = function test() {};
-      var spy = env.createSpy(fn);
+      const fn = function test() {};
+      const spy = env.createSpy(fn);
 
-      // IE doesn't do `.name`
-      if (fn.name === 'test') {
-        expect(spy.and.identity).toEqual('test');
-      } else {
-        expect(spy.and.identity).toEqual('unknown');
-      }
+      expect(spy.and.identity).toEqual('test');
     });
 
     it('warns the user that we intend to overwrite an existing property', function() {
@@ -46,7 +45,7 @@ describe('Spies', function() {
     });
 
     it('adds a spyStrategy and callTracker to the spy', function() {
-      var spy = env.createSpy(
+      const spy = env.createSpy(
         TestClass.prototype,
         TestClass.prototype.someFunction
       );
@@ -56,11 +55,11 @@ describe('Spies', function() {
     });
 
     it('tracks the argument of calls', function() {
-      var spy = env.createSpy(
+      const spy = env.createSpy(
         TestClass.prototype,
         TestClass.prototype.someFunction
       );
-      var trackSpy = spyOn(spy.calls, 'track');
+      const trackSpy = spyOn(spy.calls, 'track');
 
       spy('arg');
 
@@ -68,24 +67,24 @@ describe('Spies', function() {
     });
 
     it('tracks the context of calls', function() {
-      var spy = env.createSpy(
+      const spy = env.createSpy(
         TestClass.prototype,
         TestClass.prototype.someFunction
       );
-      var trackSpy = spyOn(spy.calls, 'track');
+      const trackSpy = spyOn(spy.calls, 'track');
 
-      var contextObject = { spyMethod: spy };
+      const contextObject = { spyMethod: spy };
       contextObject.spyMethod();
 
       expect(trackSpy.calls.mostRecent().args[0].object).toEqual(contextObject);
     });
 
     it('tracks the return value of calls', function() {
-      var spy = env.createSpy(
+      const spy = env.createSpy(
         TestClass.prototype,
         TestClass.prototype.someFunction
       );
-      var trackSpy = spyOn(spy.calls, 'track');
+      const trackSpy = spyOn(spy.calls, 'track');
 
       spy.and.returnValue('return value');
       spy();
@@ -96,18 +95,24 @@ describe('Spies', function() {
     });
 
     it('preserves arity of original function', function() {
-      var functions = [
+      const functions = [
         function nullary() {},
+        // eslint-disable-next-line no-unused-vars
         function unary(arg) {},
+        // eslint-disable-next-line no-unused-vars
         function binary(arg1, arg2) {},
+        // eslint-disable-next-line no-unused-vars
         function ternary(arg1, arg2, arg3) {},
+        // eslint-disable-next-line no-unused-vars
         function quaternary(arg1, arg2, arg3, arg4) {},
+        // eslint-disable-next-line no-unused-vars
         function quinary(arg1, arg2, arg3, arg4, arg5) {},
+        // eslint-disable-next-line no-unused-vars
         function senary(arg1, arg2, arg3, arg4, arg5, arg6) {}
       ];
 
-      for (var arity = 0; arity < functions.length; arity++) {
-        var someFunction = functions[arity],
+      for (let arity = 0; arity < functions.length; arity++) {
+        const someFunction = functions[arity],
           spy = env.createSpy(someFunction.name, someFunction);
 
         expect(spy.length).toEqual(arity);
@@ -117,7 +122,7 @@ describe('Spies', function() {
 
   describe('createSpyObj', function() {
     it('should create an object with spy methods and corresponding return values when you call jasmine.createSpyObj() with an object', function() {
-      var spyObj = env.createSpyObj('BaseName', {
+      const spyObj = env.createSpyObj('BaseName', {
         method1: 42,
         method2: 'special sauce'
       });
@@ -130,7 +135,7 @@ describe('Spies', function() {
     });
 
     it('should create an object with a bunch of spy methods when you call jasmine.createSpyObj()', function() {
-      var spyObj = env.createSpyObj('BaseName', ['method1', 'method2']);
+      const spyObj = env.createSpyObj('BaseName', ['method1', 'method2']);
 
       expect(spyObj).toEqual({
         method1: jasmine.any(Function),
@@ -141,7 +146,7 @@ describe('Spies', function() {
     });
 
     it('should allow you to omit the baseName', function() {
-      var spyObj = env.createSpyObj(['method1', 'method2']);
+      const spyObj = env.createSpyObj(['method1', 'method2']);
 
       expect(spyObj).toEqual({
         method1: jasmine.any(Function),
@@ -176,27 +181,28 @@ describe('Spies', function() {
     });
 
     it('creates an object with spy properties if a second list is passed', function() {
-      var spyObj = env.createSpyObj('base', ['method1'], ['prop1']);
+      const spyObj = env.createSpyObj('base', ['method1'], ['prop1']);
 
       expect(spyObj).toEqual({
-        method1: jasmine.any(Function)
+        method1: jasmine.any(Function),
+        prop1: undefined
       });
 
-      var descriptor = Object.getOwnPropertyDescriptor(spyObj, 'prop1');
+      const descriptor = Object.getOwnPropertyDescriptor(spyObj, 'prop1');
       expect(descriptor.get.and.identity).toEqual('base.prop1.get');
       expect(descriptor.set.and.identity).toEqual('base.prop1.set');
-
-      expect(spyObj.prop1).toBeUndefined();
     });
 
     it('creates an object with property names and return values if second object is passed', function() {
-      var spyObj = env.createSpyObj('base', ['method1'], {
+      const spyObj = env.createSpyObj('base', ['method1'], {
         prop1: 'foo',
         prop2: 37
       });
 
       expect(spyObj).toEqual({
-        method1: jasmine.any(Function)
+        method1: jasmine.any(Function),
+        prop1: 'foo',
+        prop2: 37
       });
 
       expect(spyObj.prop1).toEqual('foo');
@@ -208,8 +214,8 @@ describe('Spies', function() {
       ).toBe(1);
     });
 
-    it('allows base name to be ommitted when assigning methods and properties', function() {
-      var spyObj = env.createSpyObj({ m: 3 }, { p: 4 });
+    it('allows base name to be omitted when assigning methods and properties', function() {
+      const spyObj = env.createSpyObj({ m: 3 }, { p: 4 });
 
       expect(spyObj.m()).toEqual(3);
       expect(spyObj.p).toEqual(4);
@@ -220,7 +226,7 @@ describe('Spies', function() {
   });
 
   it('can use different strategies for different arguments', function() {
-    var spy = env.createSpy('foo');
+    const spy = env.createSpy('foo');
     spy.and.returnValue(42);
     spy.withArgs('baz', 'grault').and.returnValue(-1);
     spy.withArgs('thud').and.returnValue('bob');
@@ -231,8 +237,8 @@ describe('Spies', function() {
     expect(spy('baz', 'grault', 'waldo')).toEqual(42);
   });
 
-  it('uses custom equality testers when selecting a strategy', function() {
-    var spy = env.createSpy('foo');
+  it('uses asymmetric equality testers when selecting a strategy', function() {
+    const spy = env.createSpy('foo');
     spy.and.returnValue(42);
     spy.withArgs(jasmineUnderTest.any(String)).and.returnValue(-1);
 
@@ -240,18 +246,33 @@ describe('Spies', function() {
     expect(spy({})).toEqual(42);
   });
 
+  it('uses the provided matchersUtil selecting a strategy', function() {
+    const matchersUtil = new jasmineUnderTest.MatchersUtil({
+      customTesters: [
+        function(a, b) {
+          if ((a === 'bar' && b === 'baz') || (a === 'baz' && b === 'bar')) {
+            return true;
+          }
+        }
+      ]
+    });
+    const spy = new jasmineUnderTest.Spy('aSpy', matchersUtil);
+    spy.and.returnValue('default strategy return value');
+    spy.withArgs('bar').and.returnValue('custom strategy return value');
+    expect(spy('foo')).toEqual('default strategy return value');
+    expect(spy('baz')).toEqual('custom strategy return value');
+  });
+
   it('can reconfigure an argument-specific strategy', function() {
-    var spy = env.createSpy('foo');
+    const spy = env.createSpy('foo');
     spy.withArgs('foo').and.returnValue(42);
     spy.withArgs('foo').and.returnValue(17);
     expect(spy('foo')).toEqual(17);
   });
 
   describe('any promise-based strategy', function() {
-    it('works with global Promise library when available', function(done) {
-      jasmine.getEnv().requirePromises();
-
-      var spy = env.createSpy('foo').and.resolveTo(42);
+    it('works with global Promise library', function(done) {
+      const spy = env.createSpy('foo').and.resolveTo(42);
       spy()
         .then(function(result) {
           expect(result).toEqual(42);
@@ -259,31 +280,18 @@ describe('Spies', function() {
         })
         .catch(done.fail);
     });
-
-    it('works with a custom Promise library', function() {
-      var customPromise = {
-        resolve: jasmine.createSpy(),
-        reject: jasmine.createSpy()
-      };
-      customPromise.resolve.and.returnValue('resolved');
-      env.configure({ Promise: customPromise });
-
-      var spy = env.createSpy('foo').and.resolveTo(42);
-      expect(spy()).toEqual('resolved');
-      expect(customPromise.resolve).toHaveBeenCalledWith(42);
-    });
   });
 
   describe('when withArgs is used without a base strategy', function() {
     it('uses the matching strategy', function() {
-      var spy = env.createSpy('foo');
+      const spy = env.createSpy('foo');
       spy.withArgs('baz').and.returnValue(-1);
 
       expect(spy('baz')).toEqual(-1);
     });
 
     it("throws if the args don't match", function() {
-      var spy = env.createSpy('foo');
+      const spy = env.createSpy('foo');
       spy.withArgs('bar').and.returnValue(-1);
 
       expect(function() {

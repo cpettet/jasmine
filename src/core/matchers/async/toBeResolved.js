@@ -10,7 +10,7 @@ getJasmineRequireObj().toBeResolved = function(j$) {
    * @example
    * return expectAsync(aPromise).toBeResolved();
    */
-  return function toBeResolved(util) {
+  return function toBeResolved(matchersUtil) {
     return {
       compare: function(actual) {
         if (!j$.isPromiseLike(actual)) {
@@ -18,8 +18,19 @@ getJasmineRequireObj().toBeResolved = function(j$) {
         }
 
         return actual.then(
-          function() { return {pass: true}; },
-          function() { return {pass: false}; }
+          function() {
+            return { pass: true };
+          },
+          function(e) {
+            return {
+              pass: false,
+              message:
+                'Expected a promise to be resolved but it was ' +
+                'rejected with ' +
+                matchersUtil.pp(e) +
+                '.'
+            };
+          }
         );
       }
     };

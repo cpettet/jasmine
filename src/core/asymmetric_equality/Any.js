@@ -1,10 +1,9 @@
 getJasmineRequireObj().Any = function(j$) {
-
   function Any(expectedObject) {
     if (typeof expectedObject === 'undefined') {
       throw new TypeError(
         'jasmine.any() expects to be passed a constructor function. ' +
-        'Please pass one or use jasmine.anything() to match any object.'
+          'Please pass one or use jasmine.anything() to match any object.'
       );
     }
     this.expectedObject = expectedObject;
@@ -31,12 +30,9 @@ getJasmineRequireObj().Any = function(j$) {
       return typeof other == 'boolean';
     }
 
-    /* jshint -W122 */
-    /* global Symbol */
     if (typeof Symbol != 'undefined' && this.expectedObject == Symbol) {
       return typeof other == 'symbol';
     }
-    /* jshint +W122 */
 
     return other instanceof this.expectedObject;
   };

@@ -5,8 +5,6 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
   function SpyStrategy(options) {
     options = options || {};
 
-    var self = this;
-
     /**
      * Get the identifying information for the spy.
      * @name SpyStrategy#identity
@@ -19,31 +17,12 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
     this.getSpy = options.getSpy || function() {};
     this.plan = this._defaultPlan = function() {};
 
-    var k,
-      cs = options.customStrategies || {};
-    for (k in cs) {
+    const cs = options.customStrategies || {};
+    for (const k in cs) {
       if (j$.util.has(cs, k) && !this[k]) {
         this[k] = createCustomPlan(cs[k]);
       }
     }
-
-    var getPromise =
-      typeof options.getPromise === 'function'
-        ? options.getPromise
-        : function() {};
-
-    var requirePromise = function(name) {
-      var Promise = getPromise();
-
-      if (!Promise) {
-        throw new Error(
-          name +
-            ' requires global Promise, or `Promise` configured with `jasmine.getEnv().configure()`'
-        );
-      }
-
-      return Promise;
-    };
 
     /**
      * Tell the spy to return a promise resolving to the specified value when invoked.
@@ -53,11 +32,10 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
      * @param {*} value The value to return.
      */
     this.resolveTo = function(value) {
-      var Promise = requirePromise('resolveTo');
-      self.plan = function() {
+      this.plan = function() {
         return Promise.resolve(value);
       };
-      return self.getSpy();
+      return this.getSpy();
     };
 
     /**
@@ -68,18 +46,16 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
      * @param {*} value The value to return.
      */
     this.rejectWith = function(value) {
-      var Promise = requirePromise('rejectWith');
-
-      self.plan = function() {
+      this.plan = function() {
         return Promise.reject(value);
       };
-      return self.getSpy();
+      return this.getSpy();
     };
   }
 
   function createCustomPlan(factory) {
     return function() {
-      var plan = factory.apply(null, arguments);
+      const plan = factory.apply(null, arguments);
 
       if (!j$.isFunction_(plan)) {
         throw new Error('Spy strategy must return a function');
@@ -96,8 +72,13 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
    * @since 2.0.0
    * @function
    */
-  SpyStrategy.prototype.exec = function(context, args) {
-    return this.plan.apply(context, args);
+  SpyStrategy.prototype.exec = function(context, args, invokeNew) {
+    const contextArgs = [context].concat(
+      args ? Array.prototype.slice.call(args) : []
+    );
+    const target = this.plan.bind.apply(this.plan, contextArgs);
+
+    return invokeNew ? new target() : target();
   };
 
   /**
@@ -133,7 +114,7 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
    * @param {...*} values - Values to be returned on subsequent calls to the spy.
    */
   SpyStrategy.prototype.returnValues = function() {
-    var values = Array.prototype.slice.call(arguments);
+    const values = Array.prototype.slice.call(arguments);
     this.plan = function() {
       return values.shift();
     };
@@ -145,10 +126,10 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
    * @name SpyStrategy#throwError
    * @since 2.0.0
    * @function
-   * @param {Error|String} something Thing to throw
+   * @param {Error|Object|String} something Thing to throw
    */
   SpyStrategy.prototype.throwError = function(something) {
-    var error = something instanceof Error ? something : new Error(something);
+    const error = j$.isString_(something) ? new Error(something) : something;
     this.plan = function() {
       throw error;
     };
@@ -163,7 +144,13 @@ getJasmineRequireObj().SpyStrategy = function(j$) {
    * @param {Function} fn The function to invoke with the passed parameters.
    */
   SpyStrategy.prototype.callFake = function(fn) {
-    if (!(j$.isFunction_(fn) || j$.isAsyncFunction_(fn))) {
+    if (
+      !(
+        j$.isFunction_(fn) ||
+        j$.isAsyncFunction_(fn) ||
+        j$.isGeneratorFunction_(fn)
+      )
+    ) {
       throw new Error(
         'Argument passed to callFake should be a function, got ' + fn
       );

@@ -8,17 +8,24 @@ getJasmineRequireObj().toBe = function(j$) {
    * @example
    * expect(thing).toBe(realThing);
    */
-  function toBe(util) {
-    var tip = ' Tip: To check for deep equality, use .toEqual() instead of .toBe().';
+  function toBe(matchersUtil) {
+    const tip =
+      ' Tip: To check for deep equality, use .toEqual() instead of .toBe().';
 
     return {
       compare: function(actual, expected) {
-        var result = {
+        const result = {
           pass: actual === expected
         };
 
         if (typeof expected === 'object') {
-          result.message = util.buildFailureMessage('toBe', result.pass, actual, expected) + tip;
+          result.message =
+            matchersUtil.buildFailureMessage(
+              'toBe',
+              result.pass,
+              actual,
+              expected
+            ) + tip;
         }
 
         return result;

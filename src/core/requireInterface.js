@@ -1,5 +1,5 @@
 getJasmineRequireObj().interface = function(jasmine, env) {
-  var jasmineInterface = {
+  const jasmineInterface = {
     /**
      * Callback passed to parts of the Jasmine base interface.
      *
@@ -60,6 +60,9 @@ getJasmineRequireObj().interface = function(jasmine, env) {
      * Define a single spec. A spec should contain one or more {@link expect|expectations} that test the state of the code.
      *
      * A spec whose expectations all succeed will be passing and a spec with any failures will fail.
+     * The name `it` is a pronoun for the test target, not an abbreviation of anything. It makes the
+     * spec more readable by connecting the function name `it` and the argument `description` as a
+     * complete sentence.
      * @name it
      * @since 1.3.0
      * @function
@@ -166,6 +169,30 @@ getJasmineRequireObj().interface = function(jasmine, env) {
     },
 
     /**
+     * Sets a user-defined property that will be provided to reporters as part of the properties field of {@link SpecResult}
+     * @name setSpecProperty
+     * @since 3.6.0
+     * @function
+     * @param {String} key The name of the property
+     * @param {*} value The value of the property
+     */
+    setSpecProperty: function(key, value) {
+      return env.setSpecProperty(key, value);
+    },
+
+    /**
+     * Sets a user-defined property that will be provided to reporters as part of the properties field of {@link SuiteResult}
+     * @name setSuiteProperty
+     * @since 3.6.0
+     * @function
+     * @param {String} key The name of the property
+     * @param {*} value The value of the property
+     */
+    setSuiteProperty: function(key, value) {
+      return env.setSuiteProperty(key, value);
+    },
+
+    /**
      * Create an expectation for a spec.
      * @name expect
      * @since 1.3.0
@@ -258,10 +285,11 @@ getJasmineRequireObj().interface = function(jasmine, env) {
      * @function
      * @global
      * @param {Object} obj - The object upon which to install the {@link Spy}s
+     * @param {boolean} includeNonEnumerable - Whether or not to add spies to non-enumerable properties
      * @returns {Object} the spied object
      */
-    spyOnAllFunctions: function(obj) {
-      return env.spyOnAllFunctions(obj);
+    spyOnAllFunctions: function(obj, includeNonEnumerable) {
+      return env.spyOnAllFunctions(obj, includeNonEnumerable);
     },
 
     jsApiReporter: new jasmine.JsApiReporter({
@@ -314,6 +342,20 @@ getJasmineRequireObj().interface = function(jasmine, env) {
    */
   jasmine.addAsyncMatchers = function(matchers) {
     return env.addAsyncMatchers(matchers);
+  };
+
+  /**
+   * Add a custom object formatter for the current scope of specs.
+   *
+   * _Note:_ This is only callable from within a {@link beforeEach}, {@link it}, or {@link beforeAll}.
+   * @name jasmine.addCustomObjectFormatter
+   * @since 3.6.0
+   * @function
+   * @param {Function} formatter - A function which takes a value to format and returns a string if it knows how to format it, and `undefined` otherwise.
+   * @see custom_object_formatters
+   */
+  jasmine.addCustomObjectFormatter = function(formatter) {
+    return env.addCustomObjectFormatter(formatter);
   };
 
   /**

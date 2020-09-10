@@ -1,5 +1,5 @@
 getJasmineRequireObj().ExceptionFormatter = function(j$) {
-  var ignoredProperties = [
+  const ignoredProperties = [
     'name',
     'message',
     'stack',
@@ -13,9 +13,10 @@ getJasmineRequireObj().ExceptionFormatter = function(j$) {
   ];
 
   function ExceptionFormatter(options) {
-    var jasmineFile = (options && options.jasmineFile) || j$.util.jasmineFile();
+    const jasmineFile =
+      (options && options.jasmineFile) || j$.util.jasmineFile();
     this.message = function(error) {
-      var message = '';
+      let message = '';
 
       if (error.jasmineMessage) {
         message += error.jasmineMessage;
@@ -38,16 +39,16 @@ getJasmineRequireObj().ExceptionFormatter = function(j$) {
       return message;
     };
 
-    this.stack = function(error) {
+    this.stack = function(error, { omitMessage } = {}) {
       if (!error || !error.stack) {
         return null;
       }
 
-      var stackTrace = new j$.StackTrace(error);
-      var lines = filterJasmine(stackTrace);
-      var result = '';
+      const stackTrace = new j$.StackTrace(error);
+      const lines = filterJasmine(stackTrace);
+      let result = '';
 
-      if (stackTrace.message) {
+      if (stackTrace.message && !omitMessage) {
         lines.unshift(stackTrace.message);
       }
 
@@ -58,12 +59,12 @@ getJasmineRequireObj().ExceptionFormatter = function(j$) {
     };
 
     function filterJasmine(stackTrace) {
-      var result = [],
-        jasmineMarker =
-          stackTrace.style === 'webkit' ? '<Jasmine>' : '    at <Jasmine>';
+      const result = [];
+      const jasmineMarker =
+        stackTrace.style === 'webkit' ? '<Jasmine>' : '    at <Jasmine>';
 
       stackTrace.frames.forEach(function(frame) {
-        if (frame.file && frame.file !== jasmineFile) {
+        if (frame.file !== jasmineFile) {
           result.push(frame.raw);
         } else if (result[result.length - 1] !== jasmineMarker) {
           result.push(jasmineMarker);
@@ -78,11 +79,11 @@ getJasmineRequireObj().ExceptionFormatter = function(j$) {
         return;
       }
 
-      var result = {};
-      var empty = true;
+      const result = {};
+      let empty = true;
 
-      for (var prop in error) {
-        if (j$.util.arrayContains(ignoredProperties, prop)) {
+      for (const prop in error) {
+        if (ignoredProperties.includes(prop)) {
           continue;
         }
         result[prop] = error[prop];
@@ -90,7 +91,7 @@ getJasmineRequireObj().ExceptionFormatter = function(j$) {
       }
 
       if (!empty) {
-        return 'error properties: ' + j$.pp(result) + '\n';
+        return 'error properties: ' + j$.basicPrettyPrinter_(result) + '\n';
       }
 
       return '';

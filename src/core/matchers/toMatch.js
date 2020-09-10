@@ -1,6 +1,8 @@
 getJasmineRequireObj().toMatch = function(j$) {
-
-  var getErrorMsg = j$.formatErrorMsg('<toMatch>', 'expect(<expectation>).toMatch(<string> || <regexp>)');
+  const getErrorMsg = j$.formatErrorMsg(
+    '<toMatch>',
+    'expect(<expectation>).toMatch(<string> || <regexp>)'
+  );
 
   /**
    * {@link expect} the actual value to match a regular expression
@@ -19,7 +21,7 @@ getJasmineRequireObj().toMatch = function(j$) {
           throw new Error(getErrorMsg('Expected is not a String or a RegExp'));
         }
 
-        var regexp = new RegExp(expected);
+        const regexp = new RegExp(expected);
 
         return {
           pass: regexp.test(actual)

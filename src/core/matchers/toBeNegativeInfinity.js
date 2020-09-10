@@ -7,17 +7,19 @@ getJasmineRequireObj().toBeNegativeInfinity = function(j$) {
    * @example
    * expect(thing).toBeNegativeInfinity();
    */
-  function toBeNegativeInfinity() {
+  function toBeNegativeInfinity(matchersUtil) {
     return {
       compare: function(actual) {
-        var result = {
-          pass: (actual === Number.NEGATIVE_INFINITY)
+        const result = {
+          pass: actual === Number.NEGATIVE_INFINITY
         };
 
         if (result.pass) {
           result.message = 'Expected actual not to be -Infinity.';
         } else {
-          result.message = function() { return 'Expected ' + j$.pp(actual) + ' to be -Infinity.'; };
+          result.message = function() {
+            return 'Expected ' + matchersUtil.pp(actual) + ' to be -Infinity.';
+          };
         }
 
         return result;

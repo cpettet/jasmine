@@ -1,48 +1,112 @@
 describe('Default Spy Strategy (Integration)', function() {
-  var env;
+  let env;
 
   beforeEach(function() {
     env = new jasmineUnderTest.Env();
-    env.configure({random: false});
+    env.configure({ random: false });
   });
 
-  it('allows defining a default spy strategy', function(done) {
+  afterEach(function() {
+    env.cleanup_();
+  });
+
+  it('allows defining a default spy strategy', async function() {
     env.describe('suite with default strategy', function() {
       env.beforeEach(function() {
-        env.setDefaultSpyStrategy(function (and) {
+        env.setDefaultSpyStrategy(function(and) {
           and.returnValue(42);
         });
       });
 
       env.it('spec in suite', function() {
-        var spy = env.createSpy('something');
+        const spy = env.createSpy('something');
         expect(spy()).toBe(42);
       });
     });
 
     env.it('spec not in suite', function() {
-      var spy = env.createSpy('something');
+      const spy = env.createSpy('something');
       expect(spy()).toBeUndefined();
     });
 
-    function jasmineDone(result) {
-      expect(result.overallStatus).toEqual('passed');
-      done();
-    }
-
-    env.addReporter({ jasmineDone: jasmineDone });
-    env.execute();
+    const result = await env.execute();
+    expect(result.overallStatus).toEqual('passed');
   });
 
-  it('uses the default spy strategy defined when the spy is created', function (done) {
+  it('inherits the default spy strategy set in a parent suite', async function() {
+    env.describe('suite with default strategy', function() {
+      env.beforeAll(function() {
+        env.setDefaultSpyStrategy(function(and) {
+          and.returnValue(42);
+        });
+      });
+
+      env.describe('child suite', function() {
+        env.it('spec in suite', function() {
+          const spy = env.createSpy('something');
+          expect(spy()).toBe(42);
+        });
+      });
+    });
+
+    let overallStatus;
+    env.addReporter({
+      jasmineDone: r => (overallStatus = r.overallStatus)
+    });
+    await env.execute();
+    expect(overallStatus).toEqual('passed');
+  });
+
+  it('restores the previous default strategy when exiting a runnable', async function() {
+    env.describe('outer suite', function() {
+      env.describe('inner suite', function() {
+        env.beforeAll(function() {
+          env.setDefaultSpyStrategy(function(and) {
+            and.returnValue(42);
+          });
+        });
+
+        env.it('spec in suite', function() {
+          env.setDefaultSpyStrategy(function(and) {
+            and.returnValue(17);
+          });
+          const spy = env.createSpy('something');
+          expect(spy()).toBe(17);
+        });
+
+        env.afterAll(function() {
+          const spy = env.createSpy('something');
+          expect(spy()).toBe(42);
+        });
+      });
+
+      env.afterAll(function() {
+        const spy = env.createSpy('something');
+        expect(spy()).toBeUndefined();
+      });
+    });
+
+    let overallStatus;
+    env.addReporter({
+      jasmineDone: r => (overallStatus = r.overallStatus)
+    });
+    await env.execute();
+    expect(overallStatus).toEqual('passed');
+  });
+
+  it('uses the default spy strategy defined when the spy is created', async function() {
     env.it('spec', function() {
-      var a = env.createSpy('a');
-      env.setDefaultSpyStrategy(function (and) { and.returnValue(42); });
-      var b = env.createSpy('b');
-      env.setDefaultSpyStrategy(function (and) { and.stub(); });
-      var c = env.createSpy('c');
+      const a = env.createSpy('a');
+      env.setDefaultSpyStrategy(function(and) {
+        and.returnValue(42);
+      });
+      const b = env.createSpy('b');
+      env.setDefaultSpyStrategy(function(and) {
+        and.stub();
+      });
+      const c = env.createSpy('c');
       env.setDefaultSpyStrategy();
-      var d = env.createSpy('d');
+      const d = env.createSpy('d');
 
       expect(a()).toBeUndefined();
       expect(b()).toBe(42);
@@ -57,12 +121,7 @@ describe('Default Spy Strategy (Integration)', function() {
       expect(d.and.isConfigured()).toBe(false);
     });
 
-    function jasmineDone(result) {
-      expect(result.overallStatus).toEqual('passed');
-      done();
-    }
-
-    env.addReporter({ jasmineDone: jasmineDone });
-    env.execute();
+    const result = await env.execute();
+    expect(result.overallStatus).toEqual('passed');
   });
 });

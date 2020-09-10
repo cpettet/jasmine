@@ -1,5 +1,8 @@
 getJasmineRequireObj().toBeInstanceOf = function(j$) {
-  var usageError =  j$.formatErrorMsg('<toBeInstanceOf>', 'expect(value).toBeInstanceOf(<ConstructorFunction>)');
+  const usageError = j$.formatErrorMsg(
+    '<toBeInstanceOf>',
+    'expect(value).toBeInstanceOf(<ConstructorFunction>)'
+  );
 
   /**
    * {@link expect} the actual to be an instance of the expected class
@@ -12,30 +15,45 @@ getJasmineRequireObj().toBeInstanceOf = function(j$) {
    * expect(3).toBeInstanceOf(Number);
    * expect(new Error()).toBeInstanceOf(Error);
    */
-  function toBeInstanceOf(util, customEqualityTesters) {
+  function toBeInstanceOf(matchersUtil) {
     return {
       compare: function(actual, expected) {
-        var actualType = actual && actual.constructor ? j$.fnNameFor(actual.constructor) : j$.pp(actual),
-            expectedType = expected ? j$.fnNameFor(expected) : j$.pp(expected),
-            expectedMatcher,
-            pass;
+        const actualType =
+          actual && actual.constructor
+            ? j$.fnNameFor(actual.constructor)
+            : matchersUtil.pp(actual);
+        const expectedType = expected
+          ? j$.fnNameFor(expected)
+          : matchersUtil.pp(expected);
+        let expectedMatcher;
+        let pass;
 
         try {
-            expectedMatcher = new j$.Any(expected);
-            pass = expectedMatcher.asymmetricMatch(actual);
+          expectedMatcher = new j$.Any(expected);
+          pass = expectedMatcher.asymmetricMatch(actual);
         } catch (error) {
-            throw new Error(usageError('Expected value is not a constructor function'));
+          throw new Error(
+            usageError('Expected value is not a constructor function')
+          );
         }
 
         if (pass) {
           return {
             pass: true,
-            message: 'Expected instance of ' + actualType + ' not to be an instance of ' + expectedType
+            message:
+              'Expected instance of ' +
+              actualType +
+              ' not to be an instance of ' +
+              expectedType
           };
         } else {
           return {
             pass: false,
-            message: 'Expected instance of ' + actualType + ' to be an instance of ' + expectedType
+            message:
+              'Expected instance of ' +
+              actualType +
+              ' to be an instance of ' +
+              expectedType
           };
         }
       }

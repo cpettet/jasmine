@@ -1,19 +1,43 @@
 getJasmineRequireObj().clearStack = function(j$) {
-  var maxInlineCallCount = 10;
+  const maxInlineCallCount = 10;
 
-  function messageChannelImpl(global, setTimeout) {
-    var channel = new global.MessageChannel(),
-      head = {},
-      tail = head;
+  function browserQueueMicrotaskImpl(global) {
+    const { setTimeout, queueMicrotask } = global;
+    let currentCallCount = 0;
+    return function clearStack(fn) {
+      currentCallCount++;
 
-    var taskRunning = false;
+      if (currentCallCount < maxInlineCallCount) {
+        queueMicrotask(fn);
+      } else {
+        currentCallCount = 0;
+        setTimeout(fn);
+      }
+    };
+  }
+
+  function nodeQueueMicrotaskImpl(global) {
+    const { queueMicrotask } = global;
+
+    return function(fn) {
+      queueMicrotask(fn);
+    };
+  }
+
+  function messageChannelImpl(global) {
+    const { MessageChannel, setTimeout } = global;
+    const channel = new MessageChannel();
+    let head = {};
+    let tail = head;
+
+    let taskRunning = false;
     channel.port1.onmessage = function() {
       head = head.next;
-      var task = head.task;
+      const task = head.task;
       delete head.task;
 
       if (taskRunning) {
-        global.setTimeout(task, 0);
+        setTimeout(task, 0);
       } else {
         try {
           taskRunning = true;
@@ -24,7 +48,7 @@ getJasmineRequireObj().clearStack = function(j$) {
       }
     };
 
-    var currentCallCount = 0;
+    let currentCallCount = 0;
     return function clearStack(fn) {
       currentCallCount++;
 
@@ -39,29 +63,31 @@ getJasmineRequireObj().clearStack = function(j$) {
   }
 
   function getClearStack(global) {
-    var currentCallCount = 0;
-    var realSetTimeout = global.setTimeout;
-    var setTimeoutImpl = function clearStack(fn) {
-      Function.prototype.apply.apply(realSetTimeout, [global, [fn, 0]]);
-    };
+    const NODE_JS =
+      global.process &&
+      global.process.versions &&
+      typeof global.process.versions.node === 'string';
 
-    if (j$.isFunction_(global.setImmediate)) {
-      var realSetImmediate = global.setImmediate;
-      return function(fn) {
-        currentCallCount++;
+    const SAFARI =
+      global.navigator &&
+      /^((?!chrome|android).)*safari/i.test(global.navigator.userAgent);
 
-        if (currentCallCount < maxInlineCallCount) {
-          realSetImmediate(fn);
-        } else {
-          currentCallCount = 0;
-
-          setTimeoutImpl(fn);
-        }
-      };
-    } else if (!j$.util.isUndefined(global.MessageChannel)) {
-      return messageChannelImpl(global, setTimeoutImpl);
+    if (NODE_JS) {
+      // Unlike browsers, Node doesn't require us to do a periodic setTimeout
+      // so we avoid the overhead.
+      return nodeQueueMicrotaskImpl(global);
+    } else if (
+      SAFARI ||
+      j$.util.isUndefined(global.MessageChannel) /* tests */
+    ) {
+      // queueMicrotask is dramatically faster than MessageChannel in Safari.
+      // Some of our own integration tests provide a mock queueMicrotask in all
+      // environments because it's simpler to mock than MessageChannel.
+      return browserQueueMicrotaskImpl(global);
     } else {
-      return setTimeoutImpl;
+      // MessageChannel is faster than queueMicrotask in supported browsers
+      // other than Safari.
+      return messageChannelImpl(global);
     }
   }
 

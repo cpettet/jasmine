@@ -11,7 +11,7 @@ getJasmineRequireObj().toBeResolvedTo = function(j$) {
    * @example
    * return expectAsync(aPromise).toBeResolvedTo({prop: 'value'});
    */
-  return function toBeResolvedTo(util, customEqualityTesters) {
+  return function toBeResolvedTo(matchersUtil) {
     return {
       compare: function(actualPromise, expectedValue) {
         if (!j$.isPromiseLike(actualPromise)) {
@@ -19,14 +19,17 @@ getJasmineRequireObj().toBeResolvedTo = function(j$) {
         }
 
         function prefix(passed) {
-          return 'Expected a promise ' +
+          return (
+            'Expected a promise ' +
             (passed ? 'not ' : '') +
-            'to be resolved to ' + j$.pp(expectedValue);
+            'to be resolved to ' +
+            matchersUtil.pp(expectedValue)
+          );
         }
 
         return actualPromise.then(
           function(actualValue) {
-            if (util.equals(actualValue, expectedValue, customEqualityTesters)) {
+            if (matchersUtil.equals(actualValue, expectedValue)) {
               return {
                 pass: true,
                 message: prefix(true) + '.'
@@ -34,14 +37,22 @@ getJasmineRequireObj().toBeResolvedTo = function(j$) {
             } else {
               return {
                 pass: false,
-                message: prefix(false) + ' but it was resolved to ' + j$.pp(actualValue) + '.'
+                message:
+                  prefix(false) +
+                  ' but it was resolved to ' +
+                  matchersUtil.pp(actualValue) +
+                  '.'
               };
             }
           },
-          function() {
+          function(e) {
             return {
               pass: false,
-              message: prefix(false) + ' but it was rejected.'
+              message:
+                prefix(false) +
+                ' but it was rejected with ' +
+                matchersUtil.pp(e) +
+                '.'
             };
           }
         );
