@@ -19,6 +19,12 @@ For ElectronJS versions 11.0.0-nightly.20200721 and beyond, [karma-electron-laun
 
 The last nightly build that karma-electron-launcher was able to run tests against was 11.0.0-nightly.20200720.  The diff between that version and 11.0.0-nightly.20200721 is: https://github.com/electron/electron/compare/8f5280a821644a57e1f041a1bf570035d48cd4f6...95dd81bd689416fe02efad77c973a5643ab88a54.
 
+## Why the fork?
+
+For ElectronJS versions 11.0.0-nightly.20200721 and beyond, [https://github.com/lele85/karma-electron-launcher](karma-electron-launcher) is able to capture ElectronJS but no tests get run.  This fork [https://github.com/v-kpheng/jasmine/blob/electron-missing-jasmineFile/src/core/util.js#L119](patches) the issue.
+
+The last nightly build that karma-electron-launcher was able to run tests against was 11.0.0-nightly.20200720.  The diff between that version and 11.0.0-nightly.20200721 is: https://github.com/electron/electron/compare/8f5280a821644a57e1f041a1bf570035d48cd4f6...95dd81bd689416fe02efad77c973a5643ab88a54.
+
 ## Installation
 
 There are several different ways to install Jasmine, depending on your 
